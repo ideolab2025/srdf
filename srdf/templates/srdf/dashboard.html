@@ -1,0 +1,821 @@
+{% extends "srdf/base_dashboard_2025.html" %}
+{% load static %}
+
+{% block title %}SRDF Dashboard{% endblock %}
+
+{% block side_left_menu %}
+<ul class="nav flex-column">
+    <li class="nav-item">
+        <a class="nav-link" href="/srdf/">
+            <i class="fa-server me-2"></i> SRDF Home
+        </a>
+    </li>
+</ul>
+{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" type="text/css" href="{% static 'css/srdf/dashboard.css' %}?v={% now 'U' %}">
+{% endblock %}
+
+{% block content %}
+<div class="srdf-wrap">
+
+    <div class="srdf-head">
+        <h1 class="srdf-page-title">SRDF Control Plane</h1>
+        <div class="srdf-meta">
+            <strong>Generated</strong>: {{ generated_at|date:"Y-m-d H:i:s" }} |
+            <strong>Nodes</strong>: {{ summary.nodes_total }} |
+            <strong>Replication</strong>: {{ summary.replication_total }} |
+            <strong>Failovers</strong>: {{ summary.active_failovers }}
+        </div>
+    </div>
+
+    {% if messages %}
+    <div class="srdf-messages">
+        {% for message in messages %}
+        <div class="srdf-message srdf-message-{{ message.tags|default:'info' }}">
+            {{ message }}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+
+    <div class="srdf-top-actions">
+        <a href="{{ srdf_admin_base_url|default:'/admin-api/' }}srdf/node/" class="srdf-btn srdf-btn-primary">Nodes Admin</a>
+        <a href="{{ srdf_admin_base_url|default:'/admin-api/' }}srdf/replicationservice/" class="srdf-btn srdf-btn-secondary">Replication Admin</a>
+        <a href="{{ srdf_admin_base_url|default:'/admin-api/' }}srdf/failoverplan/" class="srdf-btn srdf-btn-secondary">Failover Plans</a>
+        <a href="{{ srdf_admin_base_url|default:'/admin-api/' }}srdf/actionexecution/" class="srdf-btn srdf-btn-secondary">Executions</a>
+        <a href="{{ srdf_admin_base_url|default:'/admin-api/' }}srdf/auditevent/" class="srdf-btn srdf-btn-secondary">Audit</a>
+        <a href="{% url 'srdf:api_status' %}" class="srdf-btn srdf-btn-secondary" target="_blank">API Status</a>
+    </div>
+
+
+    <div class="srdf-tabs-wrap">
+        <div class="srdf-tabs">
+            <button type="button" class="srdf-tab-btn {% if active_tab == 'tab-overview' %}is-active{% endif %}" data-tab-target="tab-overview">Overview</button>
+            <button type="button" class="srdf-tab-btn {% if active_tab == 'tab-nodes' %}is-active{% endif %}" data-tab-target="tab-nodes">Nodes</button>
+            <button type="button" class="srdf-tab-btn {% if active_tab == 'tab-replication' %}is-active{% endif %}" data-tab-target="tab-replication">Replication</button>
+
+            <button type="button" class="srdf-tab-btn {% if active_tab == 'tab-actions' %}is-active{% endif %}" data-tab-target="tab-actions">Actions</button>
+            <button type="button" class="srdf-tab-btn {% if active_tab == 'tab-journal' %}is-active{% endif %}" data-tab-target="tab-journal">Journal</button>
+            <button type="button" class="srdf-tab-btn {% if active_tab == 'tab-audit' %}is-active{% endif %}" data-tab-target="tab-audit">Audit</button>     
+            <button type="button" class="srdf-tab-btn {% if active_tab == 'tab-locks' %}is-active{% endif %}" data-tab-target="tab-locks">Locks</button>
+        </div>
+    </div>
+
+    <div id="tab-overview" class="srdf-tab-panel {% if active_tab == 'tab-overview' %}is-active{% endif %}">
+        <div class="srdf-grid">
+
+            <div class="srdf-card">
+                <h2>Cluster Health</h2>
+                <div class="srdf-kpi-grid">
+                    <div class="srdf-kpi-box">
+                        <div class="srdf-kpi-label">Total Nodes</div>
+                        <div class="srdf-kpi-value">{{ summary.nodes_total }}</div>
+                    </div>
+                    <div class="srdf-kpi-box">
+                        <div class="srdf-kpi-label">Online</div>
+                        <div class="srdf-kpi-value ok">{{ summary.nodes_online }}</div>
+                    </div>
+                    <div class="srdf-kpi-box">
+                        <div class="srdf-kpi-label">Offline</div>
+                        <div class="srdf-kpi-value error">{{ summary.nodes_offline }}</div>
+                    </div>
+                    <div class="srdf-kpi-box">
+                        <div class="srdf-kpi-label">Degraded</div>
+                        <div class="srdf-kpi-value warn">{{ summary.nodes_degraded }}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="srdf-card">
+                <h2>Replication</h2>
+                <div class="srdf-kpi-grid">
+                    <div class="srdf-kpi-box">
+                        <div class="srdf-kpi-label">Total</div>
+                        <div class="srdf-kpi-value">{{ summary.replication_total }}</div>
+                    </div>
+                    <div class="srdf-kpi-box">
+                        <div class="srdf-kpi-label">Enabled</div>
+                        <div class="srdf-kpi-value ok">{{ summary.replication_enabled }}</div>
+                    </div>
+                    <div class="srdf-kpi-box">
+                        <div class="srdf-kpi-label">Active Failovers</div>
+                        <div class="srdf-kpi-value warn">{{ summary.active_failovers }}</div>
+                    </div>
+                    <div class="srdf-kpi-box">
+                        <div class="srdf-kpi-label">Locks</div>
+                        <div class="srdf-kpi-value">{{ summary.locked_objects }}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="srdf-card srdf-card-full">
+                <div class="srdf-section-head">
+                    <h2>Failover Control</h2>
+                </div>
+
+                <div class="srdf-failover-actions">
+                    <form method="post" action="{% url 'srdf:dashboard_run_action' %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="action_name" value="failover.prepare">
+                        <input type="hidden" name="next_tab" value="tab-overview">
+                        <button type="submit" class="srdf-btn srdf-btn-secondary">Prepare Failover</button>
+                    </form>
+
+                    <form method="post" action="{% url 'srdf:dashboard_run_action' %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="action_name" value="failover.execute">
+                        <input type="hidden" name="next_tab" value="tab-overview">
+                        <button type="submit" class="srdf-btn srdf-btn-primary">Execute Failover</button>
+                    </form>
+                </div>
+
+                <div class="srdf-table-wrap" style="margin-top:16px;">
+                    <table class="srdf-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Name</th>
+                                <th>Source</th>
+                                <th>Target</th>
+                                <th>Status</th>
+                                <th>Steps</th>
+                                <th>Updated</th>
+                                <th>Inspect</th>
+                                <th>Prepare</th>
+                                <th>Dry Run</th>
+                                <th>Execute</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in failover_plans %}
+
+
+                            <tr>
+                                <td>{{ row.id }}</td>
+                                <td>{{ row.name }}</td>
+                                <td>{{ row.source_site|default:"-" }}</td>
+                                <td>{{ row.target_site|default:"-" }}</td>
+                                <td><span class="srdf-badge srdf-badge-{{ row.status }}">{{ row.status|upper }}</span></td>
+                                <td>{{ row.plan_data.steps|length|default:"0" }}</td>
+                                <td>{{ row.updated_at|date:"Y-m-d H:i:s"|default:"-" }}</td>
+                                <td>
+                                    <button
+                                        type="button"
+                                        class="srdf-mini-btn js-srdf-failover-inspect"
+                                        data-detail-url="{% url 'srdf:failover_plan_detail' row.id %}"
+                                        >
+                                        Inspect
+                                    </button>
+                                </td>
+                                <td>
+                                    <form method="post" action="{% url 'srdf:dashboard_run_action' %}">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action_name" value="failover.prepare">
+                                        <input type="hidden" name="plan_id" value="{{ row.id }}">
+                                        <input type="hidden" name="next_tab" value="tab-overview">
+                                        <button type="submit" class="srdf-mini-btn">Prepare</button>
+                                    </form>
+                                </td>
+                                <td>
+                                    <form method="post" action="{% url 'srdf:dashboard_run_action' %}">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action_name" value="failover.execute_dry_run">
+                                        <input type="hidden" name="plan_id" value="{{ row.id }}">
+                                        <input type="hidden" name="next_tab" value="tab-overview">
+                                        <button type="submit" class="srdf-mini-btn">Dry Run</button>
+                                    </form>
+                                </td>
+                                <td>
+                                    <form method="post" action="{% url 'srdf:dashboard_run_action' %}">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action_name" value="failover.execute">
+                                        <input type="hidden" name="plan_id" value="{{ row.id }}">
+                                        <input type="hidden" name="next_tab" value="tab-overview">
+                                        <button type="submit" class="srdf-mini-btn srdf-mini-btn-primary">Execute</button>
+                                    </form>
+                                </td>
+                            </tr>                            
+
+                            {% empty %}
+                            <tr><td colspan="11">No failover plans found.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+
+            <div class="srdf-card srdf-card-full">
+                <h2>Latest Replication Statuses</h2>
+                <div class="srdf-table-wrap">
+                    <table class="srdf-table">
+                        <thead>
+                            <tr>
+                                <th>Service</th>
+                                <th>Status</th>
+                                <th>Lag</th>
+                                <th>Collected</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in replication_rows|slice:":8" %}
+                            <tr>
+                                <td>{{ row.name }}</td>
+                                <td><span class="srdf-badge srdf-badge-{{ row.status }}">{{ row.status|upper }}</span></td>
+                                <td>{{ row.lag_seconds }} s</td>
+                                <td>{{ row.collected_at|date:"Y-m-d H:i:s"|default:"-" }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="4">No replication data.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <div id="tab-nodes" class="srdf-tab-panel {% if active_tab == 'tab-nodes' %}is-active{% endif %}">
+        <div class="srdf-card srdf-card-full">
+            <h2>Nodes</h2>
+            <div class="srdf-table-wrap">
+                <table class="srdf-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Hostname</th>
+                            <th>Site</th>
+                            <th>Role</th>
+                            <th>Status</th>
+                            <th>Enabled</th>
+                            <th>Last Seen</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in nodes %}
+                        <tr>
+                            <td>{{ row.name }}</td>
+                            <td>{{ row.hostname|default:"-" }}</td>
+                            <td>{{ row.site|default:"-" }}</td>
+                            <td>{{ row.role }}</td>
+                            <td><span class="srdf-badge srdf-badge-{{ row.status }}">{{ row.status|upper }}</span></td>
+                            <td>{{ row.is_enabled|yesno:"Yes,No" }}</td>
+                            <td>{{ row.last_seen_at|date:"Y-m-d H:i:s"|default:"-" }}</td>
+
+                            <td>
+                                <div class="srdf-row-actions">
+                                    <button
+                                        type="button"
+                                        class="srdf-mini-btn js-srdf-node-inspect"
+                                        data-detail-url="{% url 'srdf:node_detail' row.id %}"
+                                        >
+                                        Inspect
+                                    </button>
+
+                                    <form method="post" action="{% url 'srdf:dashboard_run_action' %}">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action_name" value="node.ping">
+                                        <input type="hidden" name="node_id" value="{{ row.id }}">
+                                        <input type="hidden" name="next_tab" value="tab-nodes">
+                                        <button type="submit" class="srdf-mini-btn">Ping</button>
+                                    </form>
+
+                                    <form method="post" action="{% url 'srdf:dashboard_run_action' %}">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action_name" value="node.refresh_status">
+                                        <input type="hidden" name="node_id" value="{{ row.id }}">
+                                        <input type="hidden" name="next_tab" value="tab-nodes">
+                                        <button type="submit" class="srdf-mini-btn srdf-mini-btn-primary">Refresh</button>
+                                    </form>
+                                </div>
+                            </td>
+
+
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="8">No nodes found.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="tab-replication" class="srdf-tab-panel {% if active_tab == 'tab-replication' %}is-active{% endif %}">
+        <div class="srdf-card srdf-card-full">
+            <div class="srdf-section-head">
+                <h2>Replication Matrix</h2>
+                <form method="post" action="{% url 'srdf:dashboard_run_action' %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="action_name" value="replication.check">
+                    <input type="hidden" name="next_tab" value="tab-replication">
+                    <button type="submit" class="srdf-btn srdf-btn-secondary">Run Replication Check</button>
+                </form>
+            </div>
+
+            <div class="srdf-table-wrap">
+                <table class="srdf-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Type</th>
+                            <th>Mode</th>
+                            <th>Source</th>
+                            <th>Target</th>
+                            <th>Status</th>
+                            <th>Lag</th>
+                            <th>Last Error</th>
+                            <th>Collected</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in replication_rows %}
+                        <tr>
+                            <td>{{ row.name }}</td>
+                            <td>{{ row.service_type }}</td>
+                            <td>{{ row.mode }}</td>
+                            <td>{{ row.source_node }}</td>
+                            <td>{{ row.target_node }}</td>
+                            <td><span class="srdf-badge srdf-badge-{{ row.status }}">{{ row.status|upper }}</span></td>
+                            <td>{{ row.lag_seconds }} s</td>
+                            <td class="srdf-error-cell">{{ row.last_error|default:"-" }}</td>
+                            <td>{{ row.collected_at|date:"Y-m-d H:i:s"|default:"-" }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="9">No replication services found.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="tab-actions" class="srdf-tab-panel {% if active_tab == 'tab-actions' %}is-active{% endif %}">
+        <div class="srdf-card srdf-card-full">
+            <h2>Latest Actions</h2>
+            <div class="srdf-table-wrap">
+                <table class="srdf-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Node</th>
+                            <th>Action</th>
+                            <th>Status</th>
+                            <th>Duration</th>
+                            <th>Created</th>
+                            <th>Inspect</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in latest_actions %}
+                        <tr>
+                            <td>{{ row.id }}</td>
+                            <td>{% if row.node %}{{ row.node.name }}{% else %}-{% endif %}</td>
+                            <td>{{ row.action_name }}</td>
+                            <td><span class="srdf-badge srdf-badge-{{ row.status }}">{{ row.status|upper }}</span></td>
+                            <td>{{ row.duration_ms }} ms</td>
+                            <td>{{ row.created_at|date:"Y-m-d H:i:s" }}</td>
+                            <td>
+                                <button
+                                    type="button"
+                                    class="srdf-mini-btn js-srdf-action-inspect"
+                                    data-detail-url="{% url 'srdf:action_detail' row.id %}"
+                                    >
+                                    Inspect
+                                </button>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="7">No actions found.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+
+    <div id="tab-journal" class="srdf-tab-panel {% if active_tab == 'tab-journal' %}is-active{% endif %}">
+        <div class="srdf-card srdf-card-full">
+            <div class="srdf-section-head">
+                <h2>SRDF Journal</h2>
+            </div>
+
+            <div class="srdf-journal-box">
+                {% for item in recent_journal %}
+                <div class="srdf-journal-line srdf-journal-line-{{ item.kind }}">
+                    {{ item.line }}
+                </div>
+                {% empty %}
+                <div class="srdf-journal-line">No journal event available.</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+
+
+    <div id="tab-audit" class="srdf-tab-panel {% if active_tab == 'tab-audit' %}is-active{% endif %}">
+        <div class="srdf-card srdf-card-full">
+            <h2>Latest Audit Events</h2>
+            <div class="srdf-table-wrap">
+                <table class="srdf-table">
+                    <thead>
+                        <tr>
+                            <th>Type</th>
+                            <th>Level</th>
+                            <th>Node</th>
+                            <th>Message</th>
+                            <th>Created</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in latest_audits %}
+                        <tr>
+                            <td>{{ row.event_type }}</td>
+                            <td><span class="srdf-badge srdf-badge-{{ row.level }}">{{ row.level|upper }}</span></td>
+                            <td>{% if row.node %}{{ row.node.name }}{% else %}-{% endif %}</td>
+                            <td>{{ row.message }}</td>
+                            <td>{{ row.created_at|date:"Y-m-d H:i:s" }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="5">No audit events found.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="tab-locks" class="srdf-tab-panel {% if active_tab == 'tab-locks' %}is-active{% endif %}">
+        <div class="srdf-card srdf-card-full">
+            <h2>Execution Locks</h2>
+            <div class="srdf-table-wrap">
+                <table class="srdf-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Locked</th>
+                            <th>Locked At</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in locks %}
+                        <tr>
+                            <td>{{ row.name }}</td>
+                            <td>
+                                {% if row.is_locked %}
+                                <span class="srdf-badge srdf-badge-warning">LOCKED</span>
+                                {% else %}
+                                <span class="srdf-badge srdf-badge-ok">FREE</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ row.locked_at|date:"Y-m-d H:i:s"|default:"-" }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="3">No locks found.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+
+<div id="srdf-action-modal-backdrop" class="srdf-modal-backdrop">
+    <div class="srdf-modal">
+        <div class="srdf-modal-head">
+            <div>
+                <h3 id="srdf-action-modal-title" class="srdf-modal-title">Execution Detail</h3>
+                <div id="srdf-action-modal-meta" class="srdf-meta"></div>
+            </div>
+            <button type="button" id="srdf-action-modal-close" class="srdf-close-btn">✕</button>
+        </div>
+
+        <div class="srdf-modal-body">
+            <div class="srdf-modal-grid">
+                <div class="srdf-card">
+                    <h2>Summary</h2>
+                    <div id="srdf-action-summary" class="srdf-codebox">Loading...</div>
+                </div>
+
+                <div class="srdf-card">
+                    <h2>Params</h2>
+                    <pre id="srdf-action-params" class="srdf-codebox">-</pre>
+                </div>
+
+                <div class="srdf-card srdf-card-full">
+                    <h2>Result Payload</h2>
+                    <pre id="srdf-action-result" class="srdf-codebox">-</pre>
+                </div>
+
+                <div class="srdf-card">
+                    <h2>Stdout</h2>
+                    <pre id="srdf-action-stdout" class="srdf-codebox">-</pre>
+                </div>
+
+                <div class="srdf-card">
+                    <h2>Stderr</h2>
+                    <pre id="srdf-action-stderr" class="srdf-codebox">-</pre>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<div id="srdf-node-modal-backdrop" class="srdf-modal-backdrop">
+    <div class="srdf-modal">
+        <div class="srdf-modal-head">
+            <div>
+                <h3 id="srdf-node-modal-title" class="srdf-modal-title">Node Detail</h3>
+                <div id="srdf-node-modal-meta" class="srdf-meta"></div>
+            </div>
+            <button type="button" id="srdf-node-modal-close" class="srdf-close-btn">✕</button>
+        </div>
+
+        <div class="srdf-modal-body">
+            <div class="srdf-modal-grid">
+                <div class="srdf-card">
+                    <h2>Summary</h2>
+                    <div id="srdf-node-summary" class="srdf-codebox">Loading...</div>
+                </div>
+
+                <div class="srdf-card">
+                    <h2>Services</h2>
+                    <pre id="srdf-node-services" class="srdf-codebox">-</pre>
+                </div>
+
+                <div class="srdf-card srdf-card-full">
+                    <h2>Last Ping Payload</h2>
+                    <pre id="srdf-node-ping" class="srdf-codebox">-</pre>
+                </div>
+
+                <div class="srdf-card srdf-card-full">
+                    <h2>Last Status Payload</h2>
+                    <pre id="srdf-node-status" class="srdf-codebox">-</pre>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="srdf-failover-modal-backdrop" class="srdf-modal-backdrop">
+    <div class="srdf-modal">
+        <div class="srdf-modal-head">
+            <div>
+                <h3 id="srdf-failover-modal-title" class="srdf-modal-title">Failover Plan Detail</h3>
+                <div id="srdf-failover-modal-meta" class="srdf-meta"></div>
+            </div>
+            <button type="button" id="srdf-failover-modal-close" class="srdf-close-btn">✕</button>
+        </div>
+
+        <div class="srdf-modal-body">
+            <div class="srdf-modal-grid">
+                <div class="srdf-card">
+                    <h2>Summary</h2>
+                    <div id="srdf-failover-summary" class="srdf-codebox">Loading...</div>
+                </div>
+
+                <div class="srdf-card">
+                    <h2>Validation</h2>
+                    <pre id="srdf-failover-validation" class="srdf-codebox">-</pre>
+                </div>
+
+                <div class="srdf-card srdf-card-full">
+                    <h2>Last Error</h2>
+                    <pre id="srdf-failover-error" class="srdf-codebox">-</pre>
+                </div>
+
+                <div class="srdf-card srdf-card-full">
+                    <h2>Plan Data</h2>
+                    <pre id="srdf-failover-plan-data" class="srdf-codebox">-</pre>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block bottom_javascript %}
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        const buttons = document.querySelectorAll(".srdf-tab-btn");
+        const panels = document.querySelectorAll(".srdf-tab-panel");
+
+        buttons.forEach((btn) => {
+            btn.addEventListener("click", function () {
+                const target = btn.getAttribute("data-tab-target");
+
+                buttons.forEach((b) => b.classList.remove("is-active"));
+                panels.forEach((p) => p.classList.remove("is-active"));
+
+                btn.classList.add("is-active");
+                const panel = document.getElementById(target);
+                if (panel) {
+                    panel.classList.add("is-active");
+                }
+
+                const url = new URL(window.location.href);
+                url.searchParams.set("tab", target);
+                window.history.replaceState({}, "", url.toString());
+            });
+        });
+
+        function prettyJson(value) {
+            try {
+                return JSON.stringify(value || {}, null, 2);
+            } catch (e) {
+                return String(value || "");
+            }
+        }
+
+        function bindModal(config) {
+            const backdrop = document.getElementById(config.backdropId);
+            const closeBtn = document.getElementById(config.closeBtnId);
+            const inspectButtons = document.querySelectorAll(config.triggerSelector);
+
+            function openModal() {
+                backdrop.classList.add("is-active");
+                document.body.classList.add("srdf-modal-open");
+            }
+
+            function closeModal() {
+                backdrop.classList.remove("is-active");
+                document.body.classList.remove("srdf-modal-open");
+            }
+
+            inspectButtons.forEach((btn) => {
+                btn.addEventListener("click", function () {
+                    const url = btn.getAttribute("data-detail-url");
+                    if (!url) {
+                        return;
+                    }
+                    config.onBeforeOpen();
+                    openModal();
+
+                    fetch(url, {
+                        headers: {
+                            "X-Requested-With": "XMLHttpRequest"
+                        }
+                    })
+                    .then((response) => response.json())
+                    .then((data) => {
+                        if (!data.ok) {
+                            throw new Error(data.error || "Unable to load detail");
+                        }
+                        config.onLoad(data);
+                    })
+                    .catch((error) => {
+                        config.onError(error);
+                    });
+                });
+            });
+
+            if (closeBtn) {
+                closeBtn.addEventListener("click", closeModal);
+            }
+
+            if (backdrop) {
+                backdrop.addEventListener("click", function (event) {
+                    if (event.target === backdrop) {
+                        closeModal();
+                    }
+                });
+            }
+        }
+
+        bindModal({
+            backdropId: "srdf-action-modal-backdrop",
+            closeBtnId: "srdf-action-modal-close",
+            triggerSelector: ".js-srdf-action-inspect",
+            onBeforeOpen: function () {
+                document.getElementById("srdf-action-modal-title").textContent = "Execution Detail";
+                document.getElementById("srdf-action-modal-meta").textContent = "Loading...";
+                document.getElementById("srdf-action-summary").textContent = "Loading...";
+                document.getElementById("srdf-action-params").textContent = "-";
+                document.getElementById("srdf-action-result").textContent = "-";
+                document.getElementById("srdf-action-stdout").textContent = "-";
+                document.getElementById("srdf-action-stderr").textContent = "-";
+            },
+            onLoad: function (data) {
+                const row = data.execution || {};
+                document.getElementById("srdf-action-modal-title").textContent = `Execution #${row.id} — ${row.action_name || "-"}`;
+                document.getElementById("srdf-action-modal-meta").textContent =
+                `Node: ${row.node_name || "-"} | Status: ${row.status || "-"} | Duration: ${row.duration_ms || 0} ms`;
+
+                document.getElementById("srdf-action-summary").textContent =
+                `Action: ${row.action_name || "-"}\n` +
+                `Node: ${row.node_name || "-"}\n` +
+                `Status: ${row.status || "-"}\n` +
+                `Initiated by: ${row.initiated_by || "-"}\n` +
+                `Request ID: ${row.request_id || "-"}\n` +
+                `Started: ${row.started_at || "-"}\n` +
+                `Finished: ${row.finished_at || "-"}`;
+
+                document.getElementById("srdf-action-params").textContent = prettyJson(row.params);
+                document.getElementById("srdf-action-result").textContent = prettyJson(row.result_payload);
+                document.getElementById("srdf-action-stdout").textContent = row.stdout || "-";
+                document.getElementById("srdf-action-stderr").textContent = row.stderr || "-";
+            },
+            onError: function (error) {
+                document.getElementById("srdf-action-modal-meta").textContent = "Load failed";
+                document.getElementById("srdf-action-summary").textContent = error.message || "Unknown error";
+            }
+        });
+
+        bindModal({
+            backdropId: "srdf-node-modal-backdrop",
+            closeBtnId: "srdf-node-modal-close",
+            triggerSelector: ".js-srdf-node-inspect",
+            onBeforeOpen: function () {
+                document.getElementById("srdf-node-modal-title").textContent = "Node Detail";
+                document.getElementById("srdf-node-modal-meta").textContent = "Loading...";
+                document.getElementById("srdf-node-summary").textContent = "Loading...";
+                document.getElementById("srdf-node-services").textContent = "-";
+                document.getElementById("srdf-node-ping").textContent = "-";
+                document.getElementById("srdf-node-status").textContent = "-";
+            },
+            onLoad: function (data) {
+                const row = data.node || {};
+                document.getElementById("srdf-node-modal-title").textContent =
+                `Node #${row.id} — ${row.name || "-"}`;
+                document.getElementById("srdf-node-modal-meta").textContent =
+                `Status: ${row.status || "-"} | Site: ${row.site || "-"} | Role: ${row.role || "-"} | Last seen: ${row.last_seen_at || "-"}`;
+
+                document.getElementById("srdf-node-summary").textContent =
+                `Name: ${row.name || "-"}\n` +
+                `Hostname: ${row.hostname || "-"}\n` +
+                `Site: ${row.site || "-"}\n` +
+                `Role: ${row.role || "-"}\n` +
+                `Status: ${row.status || "-"}\n` +
+                `Enabled: ${row.is_enabled ? "yes" : "no"}\n` +
+                `API: ${row.api_base_url || "-"}\n` +
+                `Last seen: ${row.last_seen_at || "-"}`;
+
+                document.getElementById("srdf-node-services").textContent = prettyJson(row.services_payload);
+                document.getElementById("srdf-node-ping").textContent = prettyJson(row.ping_payload);
+                document.getElementById("srdf-node-status").textContent = prettyJson(row.status_payload);
+            },
+            onError: function (error) {
+                document.getElementById("srdf-node-modal-meta").textContent = "Load failed";
+                document.getElementById("srdf-node-summary").textContent = error.message || "Unknown error";
+            }
+        });
+
+
+        bindModal({
+            backdropId: "srdf-failover-modal-backdrop",
+            closeBtnId: "srdf-failover-modal-close",
+            triggerSelector: ".js-srdf-failover-inspect",
+            onBeforeOpen: function () {
+                document.getElementById("srdf-failover-modal-title").textContent = "Failover Plan Detail";
+                document.getElementById("srdf-failover-modal-meta").textContent = "Loading...";
+                document.getElementById("srdf-failover-summary").textContent = "Loading...";
+
+
+                document.getElementById("srdf-failover-validation").textContent = "-";
+                document.getElementById("srdf-failover-error").textContent = "-";
+                document.getElementById("srdf-failover-plan-data").textContent = "-";
+
+
+            },
+            onLoad: function (data) {
+                const row = data.plan || {};
+                document.getElementById("srdf-failover-modal-title").textContent =
+                `FailoverPlan #${row.id} — ${row.name || "-"}`;
+                document.getElementById("srdf-failover-modal-meta").textContent =
+                `Status: ${row.status || "-"} | Source: ${row.source_site || "-"} | Target: ${row.target_site || "-"} | Updated: ${row.updated_at || "-"}`;
+
+                document.getElementById("srdf-failover-summary").textContent =
+                `Name: ${row.name || "-"}\n` +
+                `Source site: ${row.source_site || "-"}\n` +
+                `Target site: ${row.target_site || "-"}\n` +
+                `Status: ${row.status || "-"}\n` +
+                `Started: ${row.started_at || "-"}\n` +
+                `Finished: ${row.finished_at || "-"}\n` +
+                `Created: ${row.created_at || "-"}`;
+
+                document.getElementById("srdf-failover-validation").textContent = prettyJson(row.validation || {});
+                document.getElementById("srdf-failover-error").textContent = row.last_error || "-";
+                document.getElementById("srdf-failover-plan-data").textContent = prettyJson(row.plan_data);
+
+
+            },
+            onError: function (error) {
+                document.getElementById("srdf-failover-modal-meta").textContent = "Load failed";
+                document.getElementById("srdf-failover-summary").textContent = error.message || "Unknown error";
+            }
+        });
+
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,1212 @@
+{% extends "accounts/base_dashboard_2025.html" %}
+{% load static %}
+{% block title %}SRDF Like – IDEO-LAB Project Guide{% endblock %}
+
+{% block side_left_menu %}
+<ul class="nav flex-column">
+    <li class="nav-item">
+        <a class="nav-link" href="{% url 'toolbox_home' %}">
+            <i class="fa fa-arrow-left me-2"></i> Retour ToolBox Home
+        </a>
+    </li>
+</ul>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .kgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem;}
+    @media(max-width:1300px){.kgrid{grid-template-columns:repeat(2,minmax(0,1fr));}}
+    @media(max-width:900px){.kgrid{grid-template-columns:1fr;}}
+
+    .kcard{
+        position:relative;
+        border:1px solid rgba(255,255,255,.14);
+        border-radius:16px;
+        padding:1rem 1rem 2.7rem;
+        min-height:160px;
+        cursor:pointer;
+        transition:.2s;
+        background:linear-gradient(180deg, rgba(18,37,67,.92), rgba(16,24,39,.96));
+        overflow:hidden;
+    }
+    .kcard::before{
+        content:"";
+        position:absolute;
+        inset:auto -20px -20px auto;
+        width:120px;height:120px;
+        background:radial-gradient(circle, rgba(96,165,250,.22), transparent 68%);
+        pointer-events:none;
+    }
+    .kcard:hover{
+        transform:translateY(-3px);
+        border-color:rgba(96,165,250,.9);
+        box-shadow:0 18px 42px rgba(0,0,0,.35);
+        background:linear-gradient(180deg, rgba(29,78,216,.36), rgba(30,41,59,.98));
+    }
+    .kcard h4{color:#fff;font-weight:700;margin-bottom:.35rem;line-height:1.2;}
+    .kcard p{color:rgba(226,232,240,.86);font-size:.84rem;margin-bottom:.35rem;}
+    .kcard .step{
+        position:absolute;right:.7rem;bottom:.7rem;width:34px;height:34px;border-radius:999px;
+        background:linear-gradient(180deg,#60a5fa,#1e3a8a);display:flex;align-items:center;justify-content:center;
+        color:#fff;font-weight:700;font-size:.72rem;box-shadow:0 5px 16px rgba(96,165,250,.45);
+    }
+    .badge-chip{display:inline-block;margin-right:.38rem;margin-top:.3rem;padding:.18rem .58rem;border:1px solid rgba(148,163,184,.4);border-radius:999px;font-size:.68rem;color:#e2e8f0;background:rgba(15,23,42,.45);}
+    .difficulty{position:absolute;left:.7rem;bottom:.7rem;padding:.15rem .5rem;border-radius:999px;font-size:.68rem;font-weight:700;text-transform:uppercase;}
+    .diff-green{background:rgba(22,163,74,.18);color:#86efac;border:1px solid rgba(22,163,74,.45);}
+    .diff-yellow{background:rgba(245,158,11,.18);color:#fde68a;border:1px solid rgba(245,158,11,.45);}
+    .diff-red{background:rgba(239,68,68,.18);color:#fca5a5;border:1px solid rgba(239,68,68,.45);}
+
+    .hero-band{
+        margin-top:.85rem;
+        display:grid;
+        grid-template-columns:1.1fr .9fr;
+        gap:1rem;
+        align-items:stretch;
+    }
+    @media(max-width:1000px){.hero-band{grid-template-columns:1fr;}}
+    .hero-panel, .hero-mini{
+        border:1px solid rgba(148,163,184,.2);
+        border-radius:18px;
+        padding:1rem 1.1rem;
+        background:linear-gradient(180deg, rgba(255,255,255,.03), rgba(15,23,42,.18));
+    }
+    .hero-panel{min-height:220px;}
+    .hero-diagram{
+        margin-top:1rem;
+        display:grid;
+        grid-template-columns:1fr auto 1fr;
+        gap:.7rem;
+        align-items:center;
+    }
+    @media(max-width:850px){.hero-diagram{grid-template-columns:1fr;}}
+    .hero-box{
+        border-radius:16px;
+        padding:1rem;
+        border:1px solid rgba(96,165,250,.25);
+        background:rgba(15,23,42,.45);
+    }
+    .hero-arrow{
+        color:#93c5fd;
+        font-size:1.6rem;
+        text-align:center;
+        font-weight:700;
+    }
+    .metric-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.8rem;margin-top:.85rem;}
+    .metric{border:1px solid rgba(148,163,184,.18);border-radius:14px;padding:.8rem;background:rgba(15,23,42,.32);}
+    .metric .num{display:block;color:#fff;font-size:1.3rem;font-weight:800;}
+    .metric .lab{color:#cbd5e1;font-size:.78rem;}
+    @media(max-width:700px){.metric-grid{grid-template-columns:1fr;}}
+
+    .ig-modal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(2,6,23,.74);z-index:1200;padding:1rem;}
+    .ig-modal.show{display:flex;}
+    .ig-box{max-width:1180px;width:100%;background:#0f172a;border:1px solid rgba(148,163,184,.35);border-radius:18px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.6);}
+    .ig-h{display:flex;align-items:center;justify-content:space-between;padding:.9rem 1rem;background:linear-gradient(90deg,rgba(30,64,175,.45),rgba(15,23,42,0));}
+    .ig-h .title{color:#e2e8f0;font-weight:700;}
+    .ig-b{padding:1rem;max-height:calc(100vh - 120px);overflow-y:auto;}
+    .two{display:grid;grid-template-columns:1.05fr .95fr;gap:1rem;}
+    @media(max-width:1000px){.two{grid-template-columns:1fr;}}
+    .ig-b h5{color:#60a5fa;margin-bottom:.35rem;font-weight:700;}
+    .ig-b h6{color:#e2e8f0;font-weight:700;margin:.6rem 0 .2rem;}
+    .ig-b p.small,.ig-b .small,.ig-b ul.small li,.ig-b ol.small li{font-size:.86rem;color:#dbe4f0;}
+    .code-block{background:#020617;border:1px solid rgba(148,163,184,.24);border-radius:.5rem;padding:.65rem .7rem;font-size:.84rem;white-space:pre-wrap;word-break:break-word;color:#e2e8f0;}
+    .tbl{width:100%;border-collapse:separate;border-spacing:0 6px;}
+    .tbl thead th{color:#e2e8f0;font-size:.8rem;border-bottom:1px solid rgba(148,163,184,.24);padding:.38rem .5rem;text-align:left;}
+    .tbl tbody tr{background:rgba(15,23,42,.35);}
+    .tbl tbody td{padding:.42rem .52rem;font-size:.84rem;color:#e2e8f0;vertical-align:top;}
+    .info-box{border-left:3px solid #60a5fa;background:rgba(30,41,59,.45);padding:.75rem .85rem;border-radius:0 12px 12px 0;color:#dbeafe;font-size:.84rem;}
+    .warn-box{border-left:3px solid #f59e0b;background:rgba(69,39,12,.28);padding:.75rem .85rem;border-radius:0 12px 12px 0;color:#fde68a;font-size:.84rem;}
+    .ok-box{border-left:3px solid #22c55e;background:rgba(20,83,45,.2);padding:.75rem .85rem;border-radius:0 12px 12px 0;color:#bbf7d0;font-size:.84rem;}
+
+    .ig-tabs{display:flex;border-bottom:1px solid rgba(148,163,184,.24);gap:.45rem;padding:0 .8rem;flex-wrap:wrap;}
+    .ig-tab-btn{padding:.52rem .95rem;border:0;background:transparent;color:rgba(226,232,240,.64);font-size:.84rem;font-weight:500;border-bottom:2px solid transparent;transform:translateY(1px);cursor:pointer;}
+    .ig-tab-btn:hover{color:rgba(226,232,240,.92);}
+    .ig-tab-btn.active{color:#60a5fa;border-bottom-color:#60a5fa;font-weight:700;}
+    .ig-tab-content{padding:1rem 0;display:none;}
+    .ig-tab-content.active{display:block;}
+
+    .legend{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.5rem;}
+    .legend span{display:inline-flex;align-items:center;gap:.35rem;padding:.18rem .58rem;border-radius:999px;font-size:.7rem;background:rgba(15,23,42,.45);border:1px solid rgba(148,163,184,.28);color:#e2e8f0;}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-title-wrap mb-4 flex justify-between items-center">
+    <div>
+        <h1 class="fw-bold text-white">SRDF Like – Guide projet IDEO‑LAB</h1>
+        <p class="text-muted mt:1">Formalisation projet pour l’équipe : architecture, data model, orchestration DR, roadmap et phases de delivery.</p>
+    </div>
+    <div class="flex gap-2">
+        <button class="btn btn-outline-light" data-open="#m-cheatsheet-srdf">SRDF Cheat‑sheet</button>
+        <button class="btn btn-primary" data-open="#m-roadmap-srdf" style="margin-left:10px;"><i class="fa fa-road me-1"></i> Roadmap V1</button>
+        <button class="btn btn-primary" data-open="#m-poc-srdf" style="margin-left:10px;"><i class="fa fa-database me-1"></i> POC PostgreSQL</button>
+    </div>
+</div>
+
+<div class="hero-band mb-4">
+    <div class="hero-panel">
+        <h3 class="text-white fw-bold mb-2">Vision projet</h3>
+        <p class="small">Le projet <strong>SRDF Like</strong> vise un socle de réplication et de bascule orienté <strong>DB-first</strong>, asynchrone, observable, et pilotable depuis un <strong>Control Plane Django</strong>. La colonne vertébrale retenue est un pipeline <strong>Capture → Journal → Transport → Apply → Verify</strong>, avec un premier démarrage pragmatique sur PostgreSQL avant généralisation multi‑DB.</p>
+
+        <div class="hero-diagram">
+            <div class="hero-box">
+                <div class="text-white fw-bold">Site A · Primary</div>
+                <div class="small mt-2">Source d’écriture · capture CDC · journal local durable · export des offsets</div>
+            </div>
+            <div class="hero-arrow">⟷</div>
+            <div class="hero-box">
+                <div class="text-white fw-bold">Site B · Standby</div>
+                <div class="small mt-2">Transport async · apply transactionnel · verify intégrité · promotion en failover</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="hero-mini">
+        <h4 class="text-white fw-bold mb-2">Cadre cible</h4>
+        <div class="metric-grid">
+            <div class="metric"><span class="num">&lt; 5 min</span><span class="lab">RTO cible V1</span></div>
+            <div class="metric"><span class="num">&lt; 10 s*</span><span class="lab">RPO best effort avec alerte</span></div>
+            <div class="metric"><span class="num">99.9%</span><span class="lab">SLO POC → pilote</span></div>
+            <div class="metric"><span class="num">DB‑First</span><span class="lab">PostgreSQL en premier, puis MariaDB</span></div>
+        </div>
+        <div class="warn-box mt-3">* en asynchrone, le vrai ennemi n’est pas la latence brute mais le <strong>backlog</strong> et la capacité réelle de rattrapage.</div>
+        <div class="legend">
+            <span>Capture CDC</span>
+            <span>Append-only journal</span>
+            <span>mTLS</span>
+            <span>Fencing</span>
+        </div>
+    </div>
+</div>
+
+<div class="kgrid">
+    <div class="kcard" data-open="#m-vision-srdf">
+        <span class="step">1.1</span>
+        <span class="difficulty diff-green">Base</span>
+        <h4>Vision & objectifs</h4>
+        <p>Contrat du projet, RTO/RPO, hypothèses réseau et tolérance explicite à la perte.</p>
+        <span class="badge-chip">RTO</span><span class="badge-chip">RPO</span><span class="badge-chip">SLO</span>
+    </div>
+
+    <div class="kcard" data-open="#m-scope-srdf">
+        <span class="step">1.2</span>
+        <span class="difficulty diff-green">Base</span>
+        <h4>Périmètre V1</h4>
+        <p>Données critiques, priorités DB, métadonnées DR, ce qui reste hors du scope initial.</p>
+        <span class="badge-chip">DB</span><span class="badge-chip">Metadata</span><span class="badge-chip">V1</span>
+    </div>
+
+    <div class="kcard" data-open="#m-architecture-srdf">
+        <span class="step">1.3</span>
+        <span class="difficulty diff-yellow">Moyen</span>
+        <h4>Architecture globale</h4>
+        <p>Pipeline SRDF-like moderne : capture, journal, transport async, apply, verify.</p>
+        <span class="badge-chip">CDC</span><span class="badge-chip">Journal</span><span class="badge-chip">Verify</span>
+    </div>
+
+    <div class="kcard" data-open="#m-planes-srdf">
+        <span class="step">2.1</span>
+        <span class="difficulty diff-yellow">Moyen</span>
+        <h4>Control Plane vs Data Plane</h4>
+        <p>Séparation structurante entre pilotage Django et flux opérationnels Linux/DB.</p>
+        <span class="badge-chip">Django</span><span class="badge-chip">Agent</span><span class="badge-chip">Plane</span>
+    </div>
+
+    <div class="kcard" data-open="#m-replication-srdf">
+        <span class="step">2.2</span>
+        <span class="difficulty diff-yellow">Moyen</span>
+        <h4>Modes de réplication</h4>
+        <p>Log shipping natif vs CDC logique, stratégie DB-first, montée vers multi-cibles.</p>
+        <span class="badge-chip">WAL</span><span class="badge-chip">Logical</span><span class="badge-chip">Mode</span>
+    </div>
+
+    <div class="kcard" data-open="#m-agent-srdf">
+        <span class="step">2.3</span>
+        <span class="difficulty diff-yellow">Moyen</span>
+        <h4>Agent Linux local</h4>
+        <p>Health, polling, collecte système, exécution d’actions, base de la remédiation.</p>
+        <span class="badge-chip">Linux</span><span class="badge-chip">Polling</span><span class="badge-chip">Exec</span>
+    </div>
+
+    <div class="kcard" data-open="#m-django-srdf">
+        <span class="step">3.1</span>
+        <span class="difficulty diff-yellow">Moyen</span>
+        <h4>Control Plane Django</h4>
+        <p>Modèles de contrôle, dashboard, orchestration, journaux d’actions et décisions.</p>
+        <span class="badge-chip">Dashboard</span><span class="badge-chip">Actions</span><span class="badge-chip">API</span>
+    </div>
+
+    <div class="kcard" data-open="#m-datamodel-srdf">
+        <span class="step">3.2</span>
+        <span class="difficulty diff-red">Structurant</span>
+        <h4>Data Model V1</h4>
+        <p>Sites, pairs, instances DB, events, health, actions, failover runs, replication state.</p>
+        <span class="badge-chip">Models</span><span class="badge-chip">State</span><span class="badge-chip">Runbook</span>
+    </div>
+
+    <div class="kcard" data-open="#m-observability-srdf">
+        <span class="step">3.3</span>
+        <span class="difficulty diff-yellow">Moyen</span>
+        <h4>Observabilité & health</h4>
+        <p>Lag, backlog, throughput, mismatch, ETA, health polling, alerting intelligent.</p>
+        <span class="badge-chip">Lag</span><span class="badge-chip">Backlog</span><span class="badge-chip">Alerting</span>
+    </div>
+
+    <div class="kcard" data-open="#m-failover-srdf">
+        <span class="step">4.1</span>
+        <span class="difficulty diff-red">Critique</span>
+        <h4>Failover / Failback</h4>
+        <p>États, fencing anti split-brain, promotion standby, bascule DNS/VIP, retour contrôlé.</p>
+        <span class="badge-chip">Promote</span><span class="badge-chip">Fencing</span><span class="badge-chip">Runbook</span>
+    </div>
+
+    <div class="kcard" data-open="#m-security-srdf">
+        <span class="step">4.2</span>
+        <span class="difficulty diff-red">Critique</span>
+        <h4>Sécurité & split-brain</h4>
+        <p>mTLS, least privilege, rotation clés/certs, journal chiffré, witness, coupure réseau.</p>
+        <span class="badge-chip">mTLS</span><span class="badge-chip">Witness</span><span class="badge-chip">ACL</span>
+    </div>
+
+    <div class="kcard" data-open="#m-connectors-srdf">
+        <span class="step">4.3</span>
+        <span class="difficulty diff-yellow">Moyen</span>
+        <h4>Connecteurs techniques</h4>
+        <p>PostgreSQL d’abord, MariaDB ensuite, puis filesync, Nginx/proxy et trafic utilisateur.</p>
+        <span class="badge-chip">PostgreSQL</span><span class="badge-chip">MariaDB</span><span class="badge-chip">Filesync</span>
+    </div>
+
+    <div class="kcard" data-open="#m-roadmap-srdf">
+        <span class="step">5.1</span>
+        <span class="difficulty diff-green">Delivery</span>
+        <h4>Roadmap & patches</h4>
+        <p>POC, pilote, généralisation multi-DB, découpage en phases Django et infra.</p>
+        <span class="badge-chip">POC</span><span class="badge-chip">Pilot</span><span class="badge-chip">Patches</span>
+    </div>
+
+    <div class="kcard" data-open="#m-tests-srdf">
+        <span class="step">5.2</span>
+        <span class="difficulty diff-yellow">Moyen</span>
+        <h4>Tests DR & validation</h4>
+        <p>Failover mensuel, lien coupé, corruption logique, PITR, mesure RTO/RPO réels.</p>
+        <span class="badge-chip">DR</span><span class="badge-chip">PITR</span><span class="badge-chip">Validation</span>
+    </div>
+
+    <div class="kcard" data-open="#m-positioning-srdf">
+        <span class="step">5.3</span>
+        <span class="difficulty diff-green">Clarté</span>
+        <h4>Positionnement produit</h4>
+        <p>Ce que SRDF Like imite, ce qu’il simplifie, et les extensions futures réalistes.</p>
+        <span class="badge-chip">SRDF</span><span class="badge-chip">PME/Lab</span><span class="badge-chip">Future</span>
+    </div>
+</div>
+
+<!-- 1.1 Vision -->
+<div class="ig-modal" id="m-vision-srdf">
+    <div class="ig-box">
+        <div class="ig-h">
+            <div class="title">1.1 Vision & objectifs – contrat projet</div>
+            <div>
+                <button class="btn btn-outline-light btn-sm" data-copy="#m-vision-srdf"><i class="fa-regular fa-copy"></i> Copier</button>
+                <button class="btn btn-danger btn-sm" data-close="#m-vision-srdf"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+        </div>
+        <div class="ig-b">
+            <div class="two">
+                <div>
+                    <h5>1️⃣ Contrat du projet</h5>
+                    <ul class="small">
+                        <li>Construire une solution <strong>Remote Data Facility Async</strong> adaptée à IDEO‑LAB.</li>
+                        <li>Commencer en <strong>DB-first</strong> : les bases restent le cœur de la V1.</li>
+                        <li>Garder une logique <strong>SRDF-like</strong>, mais modernisée autour d’un pipeline CDC.</li>
+                        <li>Prévoir une architecture exploitable par une petite équipe, sans usine à gaz dès la phase 1.</li>
+                    </ul>
+
+                    <h5>2️⃣ Objectifs de niveau de service</h5>
+                    <table class="tbl">
+                        <thead><tr><th>Indicateur</th><th>Cible</th><th>Remarque</th></tr></thead>
+                        <tbody>
+                            <tr><td>RTO</td><td>2–5 minutes</td><td>pilotage runbook + promotion + bascule endpoint</td></tr>
+                            <tr><td>RPO</td><td>best effort, alerte &lt; 10 s</td><td>en async, dépend du backlog réel</td></tr>
+                            <tr><td>SLO</td><td>99.9% → 99.99%</td><td>selon maturité POC / pilote / prod</td></tr>
+                            <tr><td>Distance</td><td>illimitée</td><td>mais débit, jitter et rattrapage comptent</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div>
+                    <h5>3️⃣ Principe directeur</h5>
+                    <div class="info-box">En asynchrone, le vrai ennemi est le <strong>retard de réplication</strong> accumulé, pas seulement la latence instantanée. Toute l’architecture doit donc piloter le backlog et non une vision naïve du réseau.</div>
+
+                    <h5 class="mt-3">4️⃣ Hypothèses de démarrage</h5>
+                    <ul class="small">
+                        <li>Deux sites : <strong>A primary</strong> et <strong>B standby</strong>.</li>
+                        <li>Witness / quorum optionnel mais recommandé dès qu’on automatise.</li>
+                        <li>Failover <strong>manuel en V1</strong>, puis semi-auto.</li>
+                        <li>Protection contre erreurs logiques via <strong>PITR + base backups</strong>.</li>
+                    </ul>
+
+                    <h5>5️⃣ Message à formaliser dans le CDFC</h5>
+                    <p class="small">Le guide n’est pas là pour “faire joli” : il doit verrouiller les invariants de design, éviter les ambiguïtés d’implémentation, et servir de support commun pour toi et tes collègues.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 1.2 Scope -->
+<div class="ig-modal" id="m-scope-srdf">
+    <div class="ig-box">
+        <div class="ig-h">
+            <div class="title">1.2 Périmètre V1 – données critiques et exclusions</div>
+            <div>
+                <button class="btn btn-outline-light btn-sm" data-copy="#m-scope-srdf"><i class="fa-regular fa-copy"></i> Copier</button>
+                <button class="btn btn-danger btn-sm" data-close="#m-scope-srdf"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+        </div>
+        <div class="ig-b">
+            <div class="two">
+                <div>
+                    <h5>1️⃣ Ce qui est obligatoire en phase 1</h5>
+                    <ul class="small">
+                        <li>Bases de données : PostgreSQL, MariaDB/MySQL, puis autres moteurs si besoin.</li>
+                        <li>Métadonnées DR : état réplication, checkpoints, journal, inventaire, état health.</li>
+                        <li>Observabilité du pipeline : offsets, backlog, erreurs, retries.</li>
+                        <li>Actioning : déclenchement d’actions sûres depuis le control plane.</li>
+                    </ul>
+
+                    <h5>2️⃣ Hors scope V1 immédiat</h5>
+                    <ul class="small">
+                        <li>Object storage / uploads critiques.</li>
+                        <li>Queues et streams type RabbitMQ / Kafka.</li>
+                        <li>Caches Redis répliqués “de manière critique”.</li>
+                        <li>Failback auto complet et non supervisé.</li>
+                    </ul>
+                </div>
+                <div>
+                    <h5>3️⃣ Principe de priorisation</h5>
+                    <table class="tbl">
+                        <thead><tr><th>Niveau</th><th>Contenu</th><th>Décision</th></tr></thead>
+                        <tbody>
+                            <tr><td>P0</td><td>DB + health + state + actions</td><td>à livrer en premier</td></tr>
+                            <tr><td>P1</td><td>dashboard + failover manuel + audit</td><td>phase pilote</td></tr>
+                            <tr><td>P2</td><td>multi-DB + filesync + proxy</td><td>après stabilisation</td></tr>
+                            <tr><td>P3</td><td>extensions produit</td><td>selon usage réel</td></tr>
+                        </tbody>
+                    </table>
+                    <div class="ok-box">Approche réaliste : mieux vaut une V1 très solide sur 1 moteur que 5 connecteurs à moitié fiables.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 1.3 Architecture -->
+<div class="ig-modal" id="m-architecture-srdf">
+    <div class="ig-box">
+        <div class="ig-h">
+            <div class="title">1.3 Architecture globale – pipeline CDC</div>
+            <div>
+                <button class="btn btn-outline-light btn-sm" data-copy="#m-architecture-srdf"><i class="fa-regular fa-copy"></i> Copier</button>
+                <button class="btn btn-danger btn-sm" data-close="#m-architecture-srdf"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+        </div>
+        <div class="ig-b">
+            <div class="two">
+                <div>
+                    <h5>1️⃣ Chaîne cible</h5>
+                    <div class="code-block">Capture (CDC) -> Journal (append-only) -> Transport (ACK/retry) -> Apply (site B) -> Verify (integrity checks)</div>
+
+                    <h5>2️⃣ Capture</h5>
+                    <ul class="small">
+                        <li>SQL : WAL / binlog / redo-log selon moteur.</li>
+                        <li>NoSQL plus tard : oplog / change streams.</li>
+                        <li>Contrainte : capture <strong>idempotente</strong>, ordonnée et replayable.</li>
+                    </ul>
+
+                    <h5>3️⃣ Journalisation</h5>
+                    <ul class="small">
+                        <li>Stockage local séquentiel par segments.</li>
+                        <li>Retention contrôlée.</li>
+                        <li>Checkpoints côté apply.</li>
+                        <li>Checksum par segment.</li>
+                    </ul>
+                </div>
+                <div>
+                    <h5>4️⃣ Transport</h5>
+                    <ul class="small">
+                        <li>Protocole fiable avec ACK offset, retry et compression.</li>
+                        <li>mTLS et authentification obligatoire.</li>
+                        <li>Backpressure et multi-stream par table / shard / partition.</li>
+                    </ul>
+
+                    <h5>5️⃣ Apply + Verify</h5>
+                    <ul class="small">
+                        <li>Apply transactionnel quand possible.</li>
+                        <li>Rejeu sans doublon.</li>
+                        <li>DDL vs DML cadré : DDL out-of-band au début.</li>
+                        <li>Verify par checksum, rowcount et hash sampling.</li>
+                    </ul>
+
+                    <div class="warn-box">Décision forte V1 : la simplicité passe avant la généralité. Le journal commun et les connecteurs universels viendront après le POC solide.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 2.1 planes -->
+<div class="ig-modal" id="m-planes-srdf">
+    <div class="ig-box">
+        <div class="ig-h">
+            <div class="title">2.1 Control Plane vs Data Plane</div>
+            <div>
+                <button class="btn btn-outline-light btn-sm" data-copy="#m-planes-srdf"><i class="fa-regular fa-copy"></i> Copier</button>
+                <button class="btn btn-danger btn-sm" data-close="#m-planes-srdf"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+        </div>
+        <div class="ig-b">
+            <table class="tbl">
+                <thead><tr><th>Plane</th><th>Responsabilités</th><th>Composants</th><th>À ne pas mélanger</th></tr></thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Control Plane</strong></td>
+                        <td>pilotage, inventory, health view, décisions, runbooks, UI, audit</td>
+                        <td>Django, API, admin, scheduler, action queue</td>
+                        <td>ne doit pas devenir le chemin de données critique</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Data Plane</strong></td>
+                        <td>capture, journal, transport, apply, verify, promotion standby</td>
+                        <td>agents Linux, DB connectors, local journal, replication workers</td>
+                        <td>ne doit pas dépendre du dashboard pour continuer à vivre</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div class="two mt-3">
+                <div>
+                    <h5>1️⃣ Pourquoi cette séparation est fondamentale</h5>
+                    <ul class="small">
+                        <li>Évite que la supervision casse la réplication.</li>
+                        <li>Permet de garder un control plane plus lent, plus riche, plus orienté produit.</li>
+                        <li>Rend l’agent local autonome en cas de coupure réseau.</li>
+                    </ul>
+                </div>
+                <div>
+                    <h5>2️⃣ Règle d’architecture</h5>
+                    <div class="info-box">Le <strong>control plane observe et décide</strong>. Le <strong>data plane exécute et tient la continuité</strong>. Cette séparation doit rester visible dans le code, les modèles et le déploiement.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 2.2 replication -->
+<div class="ig-modal" id="m-replication-srdf">
+    <div class="ig-box">
+        <div class="ig-h">
+            <div class="title">2.2 Modes de réplication – choisir sans se tirer une balle dans le pied</div>
+            <div>
+                <button class="btn btn-outline-light btn-sm" data-copy="#m-replication-srdf"><i class="fa-regular fa-copy"></i> Copier</button>
+                <button class="btn btn-danger btn-sm" data-close="#m-replication-srdf"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+        </div>
+        <div class="ig-b">
+            <div class="two">
+                <div>
+                    <h5>1️⃣ Mode A – native log shipping</h5>
+                    <ul class="small">
+                        <li>On envoie le journal natif du moteur au standby.</li>
+                        <li>Rapide, robuste, performant.</li>
+                        <li>Excellent choix pour PostgreSQL / MySQL dans un démarrage pragmatique.</li>
+                        <li>Moins générique, plus dépendant du moteur.</li>
+                    </ul>
+
+                    <h5>2️⃣ Mode B – logical row-based CDC</h5>
+                    <ul class="small">
+                        <li>On transporte des événements logiques INSERT / UPDATE / DELETE.</li>
+                        <li>Plus générique, plus multi-cibles.</li>
+                        <li>Plus complexe : ordering, drift de schéma, mapping de types.</li>
+                    </ul>
+                </div>
+                <div>
+                    <h5>3️⃣ Recommandation de lancement</h5>
+                    <div class="ok-box">Commencer par <strong>native log shipping PostgreSQL async</strong>, puis ajouter une couche CDC logique uniquement lorsqu’il faut généraliser multi‑DB ou multi-cibles.</div>
+
+                    <h5 class="mt-3">4️⃣ Décision projet</h5>
+                    <table class="tbl">
+                        <thead><tr><th>Étape</th><th>Mode</th><th>But</th></tr></thead>
+                        <tbody>
+                            <tr><td>POC</td><td>physical streaming replication</td><td>prouver robustesse et runbook</td></tr>
+                            <tr><td>Pilote</td><td>native + control plane</td><td>outillage et supervision</td></tr>
+                            <tr><td>Généralisation</td><td>connecteurs CDC</td><td>ouvrir vers MariaDB et au-delà</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 2.3 agent -->
+<div class="ig-modal" id="m-agent-srdf">
+    <div class="ig-box">
+        <div class="ig-h">
+            <div class="title">2.3 Agent Linux local – cœur opérationnel du site</div>
+            <div>
+                <button class="btn btn-outline-light btn-sm" data-copy="#m-agent-srdf"><i class="fa-regular fa-copy"></i> Copier</button>
+                <button class="btn btn-danger btn-sm" data-close="#m-agent-srdf"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+        </div>
+        <div class="ig-b">
+            <div class="ig-tabs">
+                <button class="ig-tab-btn active" data-tab="#tab-agent-1">Rôle</button>
+                <button class="ig-tab-btn" data-tab="#tab-agent-2">Health & polling</button>
+                <button class="ig-tab-btn" data-tab="#tab-agent-3">Action execution</button>
+                <button class="ig-tab-btn" data-tab="#tab-agent-4">Design système</button>
+            </div>
+
+            <div id="tab-agent-1" class="ig-tab-content active">
+                <div class="two">
+                    <div>
+                        <h5>Agent = bras local du projet</h5>
+                        <ul class="small">
+                            <li>Collecte l’état de la machine, de la DB locale et des services dépendants.</li>
+                            <li>Expose un point de vérité local même si le control plane est loin.</li>
+                            <li>Peut exécuter des actions sûres : promote, stop writer, reload service, fencing hooks.</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h5>Principes</h5>
+                        <ul class="small">
+                            <li>Stateless autant que possible, mais cache local acceptable.</li>
+                            <li>Idempotence sur les actions critiques.</li>
+                            <li>Audit obligatoire de toute commande réellement exécutée.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <div id="tab-agent-2" class="ig-tab-content">
+                <h5>Health & polling V1</h5>
+                <table class="tbl">
+                    <thead><tr><th>Signal</th><th>Source</th><th>Usage</th></tr></thead>
+                    <tbody>
+                        <tr><td>DB reachable</td><td>local connector</td><td>base health primaire</td></tr>
+                        <tr><td>replication lag</td><td>DB stats</td><td>promotion eligibility</td></tr>
+                        <tr><td>disk / journal pressure</td><td>OS metrics</td><td>risque backlog / rétention</td></tr>
+                        <tr><td>service state</td><td>systemd / process</td><td>détection panne locale</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div id="tab-agent-3" class="ig-tab-content">
+                <h5>Action execution V1</h5>
+                <div class="code-block">allowed_actions = [
+                    "promote_standby",
+                    "pause_replication",
+                    "resume_replication",
+                    "reload_service",
+                    "switch_endpoint_hook",
+                    "apply_fencing_rule"
+                    ]</div>
+                <p class="small">Aucune action shell “libre”. Toute action doit être déclarée, paramétrée, journalisée, et confirmée par policy.</p>
+            </div>
+
+            <div id="tab-agent-4" class="ig-tab-content">
+                <h5>Design système recommandé</h5>
+                <ul class="small">
+                    <li>Service systemd dédié.</li>
+                    <li>Configuration signée / versionnée.</li>
+                    <li>mTLS vers le control plane.</li>
+                    <li>Queue locale légère pour exécutions différées.</li>
+                </ul>
+                <div class="warn-box">L’agent ne doit jamais permettre une escalade shell incontrôlée. C’est un exécuteur borné, pas un tunnel root générique.</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 3.1 Django -->
+<div class="ig-modal" id="m-django-srdf">
+    <div class="ig-box">
+        <div class="ig-h">
+            <div class="title">3.1 Control Plane Django – produit, orchestration et audit</div>
+            <div>
+                <button class="btn btn-outline-light btn-sm" data-copy="#m-django-srdf"><i class="fa-regular fa-copy"></i> Copier</button>
+                <button class="btn btn-danger btn-sm" data-close="#m-django-srdf"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+        </div>
+        <div class="ig-b">
+            <div class="two">
+                <div>
+                    <h5>1️⃣ Responsabilités du Control Plane</h5>
+                    <ul class="small">
+                        <li>Inventaire des sites, pairs, agents, DB instances et endpoints.</li>
+                        <li>Dashboard global : santé, backlog, état de réplication, alertes.</li>
+                        <li>Runbooks et traces d’orchestration.</li>
+                        <li>Historique d’actions et décisions opérateur.</li>
+                    </ul>
+
+                    <h5>2️⃣ Écrans V1 attendus</h5>
+                    <ul class="small">
+                        <li>Overview cluster / pair.</li>
+                        <li>Replication state detail.</li>
+                        <li>Health timeline.</li>
+                        <li>Action center avec confirmation.</li>
+                    </ul>
+                </div>
+                <div>
+                    <h5>3️⃣ API et logique métier</h5>
+                    <table class="tbl">
+                        <thead><tr><th>Domaine</th><th>API / vue</th><th>Finalité</th></tr></thead>
+                        <tbody>
+                            <tr><td>Inventory</td><td>sites, pairs, DBs</td><td>base de pilotage</td></tr>
+                            <tr><td>Health</td><td>last status, timeline</td><td>détection dérive</td></tr>
+                            <tr><td>Actions</td><td>queue + execution log</td><td>traçabilité complète</td></tr>
+                            <tr><td>Failover</td><td>runbook runs</td><td>mesure et audit</td></tr>
+                        </tbody>
+                    </table>
+                    <div class="info-box">Le Django app doit rester le <strong>centre de lisibilité</strong> du projet : si un collègue ouvre le dashboard, il doit comprendre immédiatement l’état global du SRDF Like.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 3.2 datamodel -->
+<div class="ig-modal" id="m-datamodel-srdf">
+    <div class="ig-box">
+        <div class="ig-h">
+            <div class="title">3.2 Data Model V1 – squelette Django du projet</div>
+            <div>
+                <button class="btn btn-outline-light btn-sm" data-copy="#m-datamodel-srdf"><i class="fa-regular fa-copy"></i> Copier</button>
+                <button class="btn btn-danger btn-sm" data-close="#m-datamodel-srdf"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+        </div>
+        <div class="ig-b">
+            <div class="ig-tabs">
+                <button class="ig-tab-btn active" data-tab="#tab-model-1">Concepts</button>
+                <button class="ig-tab-btn" data-tab="#tab-model-2">Models V1</button>
+                <button class="ig-tab-btn" data-tab="#tab-model-3">Relations</button>
+                <button class="ig-tab-btn" data-tab="#tab-model-4">Évolution</button>
+            </div>
+
+            <div id="tab-model-1" class="ig-tab-content active">
+                <div class="two">
+                    <div>
+                        <h5>Objectif du data model</h5>
+                        <p class="small">Ne pas modéliser tout le monde dès le jour 1. Il faut couvrir ce qui rend le système pilotable, observable et actionnable.</p>
+                        <ul class="small">
+                            <li>site topology</li>
+                            <li>replication state</li>
+                            <li>health measurements</li>
+                            <li>action audit trail</li>
+                            <li>failover lifecycle</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h5>Niveau de granularité</h5>
+                        <ul class="small">
+                            <li>Un <strong>Site</strong> représente un lieu logique.</li>
+                            <li>Un <strong>Pair</strong> relie A et B pour une réplication donnée.</li>
+                            <li>Une <strong>DatabaseInstance</strong> décrit le moteur réel.</li>
+                            <li>Les états et événements restent historisés.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <div id="tab-model-2" class="ig-tab-content">
+                <table class="tbl">
+                    <thead><tr><th>Model</th><th>Rôle</th><th>Champs clés</th></tr></thead>
+                    <tbody>
+                        <tr><td>SrdfSite</td><td>site logique A/B/witness</td><td>name, role, region, is_enabled</td></tr>
+                        <tr><td>SrdfPair</td><td>relation primary/standby</td><td>primary_site, standby_site, mode, target_rto, target_rpo</td></tr>
+                        <tr><td>DatabaseInstance</td><td>instance DB réelle</td><td>engine, version, endpoint, port, site, status</td></tr>
+                        <tr><td>ReplicationState</td><td>état courant synthétique</td><td>lag_seconds, backlog_bytes, last_offset, state, is_eligible_for_promotion</td></tr>
+                        <tr><td>HealthSample</td><td>mesures horodatées</td><td>sampled_at, db_ok, service_ok, disk_ok, latency_ms</td></tr>
+                        <tr><td>ActionExecution</td><td>audit des actions</td><td>action_type, status, requested_by, executed_by_agent, stdout_tail</td></tr>
+                        <tr><td>FailoverRun</td><td>runbook métier</td><td>started_at, ended_at, trigger, outcome, rto_seconds</td></tr>
+                        <tr><td>AlertEvent</td><td>alerting et incidents</td><td>severity, category, message, is_open</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div id="tab-model-3" class="ig-tab-content">
+                <div class="code-block">SrdfSite 1---n DatabaseInstance
+                    SrdfPair 1---1 primary_site
+                    SrdfPair 1---1 standby_site
+                    SrdfPair 1---n ReplicationState
+                    SrdfPair 1---n HealthSample
+                    SrdfPair 1---n FailoverRun
+                    FailoverRun 1---n ActionExecution</div>
+                <p class="small">On garde des tables d’historique séparées des états courants pour ne pas mélanger lecture “dashboard” et analyse temporelle.</p>
+            </div>
+
+            <div id="tab-model-4" class="ig-tab-content">
+                <h5>Évolutions prévues</h5>
+                <ul class="small">
+                    <li>MariaDB-specific state.</li>
+                    <li>Filesync inventory and drift tracking.</li>
+                    <li>Traffic switch objects for proxy / DNS / VIP.</li>
+                    <li>Witness/quorum votes et fencing receipts.</li>
+                </ul>
+                <div class="warn-box">Le data model doit rester extensible sans casser la V1. Évite les abstractions trop tôt, mais prépare des points d’extension propres.</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 3.3 observability -->
+<div class="ig-modal" id="m-observability-srdf">
+    <div class="ig-box">
+        <div class="ig-h">
+            <div class="title">3.3 Observabilité – le cœur de l’async</div>
+            <div>
+                <button class="btn btn-outline-light btn-sm" data-copy="#m-observability-srdf"><i class="fa-regular fa-copy"></i> Copier</button>
+                <button class="btn btn-danger btn-sm" data-close="#m-observability-srdf"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+        </div>
+        <div class="ig-b">
+            <div class="two">
+                <div>
+                    <h5>1️⃣ Métriques minimales</h5>
+                    <ul class="small">
+                        <li>replication lag (seconds)</li>
+                        <li>backlog size (bytes / segments)</li>
+                        <li>throughput capture / transport / apply</li>
+                        <li>error rate + retry count</li>
+                        <li>checksum mismatch</li>
+                        <li>estimated catch-up ETA</li>
+                    </ul>
+
+                    <h5>2️⃣ États de haut niveau</h5>
+                    <div class="code-block">HEALTHY -> DEGRADED -> DISCONNECTED -> CATCHING_UP -> PROMOTED</div>
+                </div>
+                <div>
+                    <h5>3️⃣ Alerting V1</h5>
+                    <table class="tbl">
+                        <thead><tr><th>Condition</th><th>Action</th><th>Sens</th></tr></thead>
+                        <tbody>
+                            <tr><td>lag > threshold</td><td>warning alert</td><td>la fenêtre RPO dérive</td></tr>
+                            <tr><td>backlog growth > 0 sur fenêtre glissante</td><td>degraded</td><td>la réplication ne rattrape plus</td></tr>
+                            <tr><td>apply stalled</td><td>critical</td><td>risque de standby inutilisable</td></tr>
+                            <tr><td>checksum mismatch</td><td>critical + verify run</td><td>divergence potentielle</td></tr>
+                        </tbody>
+                    </table>
+                    <div class="info-box">Le dashboard doit rendre visible non seulement le lag présent, mais aussi la <strong>tendance</strong> et le <strong>temps de retour à la normale</strong>.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 4.1 failover -->
+<div class="ig-modal" id="m-failover-srdf">
+    <div class="ig-box">
+        <div class="ig-h">
+            <div class="title">4.1 Failover / Failback – states, runbook, sécurité opératoire</div>
+            <div>
+                <button class="btn btn-outline-light btn-sm" data-copy="#m-failover-srdf"><i class="fa-regular fa-copy"></i> Copier</button>
+                <button class="btn btn-danger btn-sm" data-close="#m-failover-srdf"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+        </div>
+        <div class="ig-b">
+            <div class="ig-tabs">
+                <button class="ig-tab-btn active" data-tab="#tab-fail-1">Runbook V1</button>
+                <button class="ig-tab-btn" data-tab="#tab-fail-2">Déclencheurs</button>
+                <button class="ig-tab-btn" data-tab="#tab-fail-3">Failback</button>
+            </div>
+
+            <div id="tab-fail-1" class="ig-tab-content active">
+                <div class="code-block">1. Confirm primary failure
+                    2. Apply fencing to old primary
+                    3. Verify standby backlog is acceptable
+                    4. Promote standby
+                    5. Switch endpoint (DNS / VIP / proxy)
+                    6. Restart app connections if needed
+                    7. Open failover run and record RTO</div>
+                <p class="small">Le failover V1 est manuel assisté. L’objectif n’est pas l’automatisme spectaculaire, mais la <strong>fiabilité opérationnelle</strong>.</p>
+            </div>
+
+            <div id="tab-fail-2" class="ig-tab-content">
+                <table class="tbl">
+                    <thead><tr><th>Déclencheur</th><th>Validation</th><th>Décision</th></tr></thead>
+                    <tbody>
+                        <tr><td>primary lost</td><td>health + fencing possible</td><td>ouvrir failover</td></tr>
+                        <tr><td>standby caught up enough</td><td>lag <= policy</td><td>promotion eligible</td></tr>
+                        <tr><td>endpoint switch ready</td><td>dns/proxy hook ready</td><td>cut traffic</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div id="tab-fail-3" class="ig-tab-content">
+                <h5>Failback</h5>
+                <ul class="small">
+                    <li>À traiter comme une opération séparée.</li>
+                    <li>Jamais “retour automatique” en V1.</li>
+                    <li>Rebuild propre de l’ancien primary avant retour de rôle.</li>
+                </ul>
+                <div class="warn-box">Beaucoup de systèmes se plantent au failback. Il doit rester <strong>plus conservateur</strong> que le failover.</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 4.2 security -->
+<div class="ig-modal" id="m-security-srdf">
+    <div class="ig-box">
+        <div class="ig-h">
+            <div class="title">4.2 Sécurité, quorum et prévention du split-brain</div>
+            <div>
+                <button class="btn btn-outline-light btn-sm" data-copy="#m-security-srdf"><i class="fa-regular fa-copy"></i> Copier</button>
+                <button class="btn btn-danger btn-sm" data-close="#m-security-srdf"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+        </div>
+        <div class="ig-b">
+            <div class="two">
+                <div>
+                    <h5>1️⃣ Mesures minimales</h5>
+                    <ul class="small">
+                        <li>mTLS site A ↔ site B.</li>
+                        <li>Journal local chiffré au repos.</li>
+                        <li>Rotation des clés / certificats.</li>
+                        <li>Least privilege sur les comptes CDC et agents.</li>
+                    </ul>
+
+                    <h5>2️⃣ Split-brain</h5>
+                    <ul class="small">
+                        <li>Couper l’accès du primary historique avant promotion B.</li>
+                        <li>Fencing réseau : firewall / security group / ACL.</li>
+                        <li>VIP / DNS redirigé seulement après fencing validé.</li>
+                    </ul>
+                </div>
+                <div>
+                    <h5>3️⃣ Witness / quorum</h5>
+                    <p class="small">Optionnel au tout début, mais fortement recommandé dès qu’on veut aller vers du semi-auto. Son rôle : arbitrer et réduire le risque de double-primary.</p>
+
+                    <h5>4️⃣ Politique sécurité projet</h5>
+                    <table class="tbl">
+                        <thead><tr><th>Sujet</th><th>V1</th><th>Ensuite</th></tr></thead>
+                        <tbody>
+                            <tr><td>mTLS</td><td>obligatoire</td><td>pinning / rotation outillée</td></tr>
+                            <tr><td>fencing</td><td>network rules</td><td>STONITH si justifié</td></tr>
+                            <tr><td>audit</td><td>action logs</td><td>tamper evidence</td></tr>
+                            <tr><td>RBAC</td><td>roles Django simples</td><td>granular policies</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 4.3 connectors -->
+<div class="ig-modal" id="m-connectors-srdf">
+    <div class="ig-box">
+        <div class="ig-h">
+            <div class="title">4.3 Connecteurs techniques – PostgreSQL, MariaDB, filesync, proxy</div>
+            <div>
+                <button class="btn btn-outline-light btn-sm" data-copy="#m-connectors-srdf"><i class="fa-regular fa-copy"></i> Copier</button>
+                <button class="btn btn-danger btn-sm" data-close="#m-connectors-srdf"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+        </div>
+        <div class="ig-b">
+            <div class="two">
+                <div>
+                    <h5>1️⃣ PostgreSQL – priorité absolue</h5>
+                    <ul class="small">
+                        <li>Physical streaming replication async.</li>
+                        <li>Lag via pg_stat_replication côté primary.</li>
+                        <li>Replay delay via recovery functions côté standby.</li>
+                        <li>PITR via archiving + base backup.</li>
+                    </ul>
+
+                    <h5>2️⃣ MariaDB – phase suivante</h5>
+                    <ul class="small">
+                        <li>Brancher après stabilisation du socle V1.</li>
+                        <li>Conserver le même contrat de health / action / state.</li>
+                        <li>Éviter de tout abstraire avant d’avoir le premier connecteur vraiment robuste.</li>
+                    </ul>
+                </div>
+                <div>
+                    <h5>3️⃣ Filesync et trafic</h5>
+                    <ul class="small">
+                        <li>Filesync utile pour fichiers applicatifs hors DB.</li>
+                        <li>Nginx / proxy / VIP / DNS pour la bascule du trafic utilisateur.</li>
+                        <li>Ces briques doivent s’intégrer au runbook, pas vivre séparément.</li>
+                    </ul>
+
+                    <h5>4️⃣ Décision d’implémentation</h5>
+                    <div class="code-block">V1 order:
+                        1. PostgreSQL connector
+                        2. Health + dashboard
+                        3. Manual failover run
+                        4. MariaDB connector
+                        5. Filesync
+                        6. Proxy / endpoint switch automation</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 5.1 roadmap -->
+<div class="ig-modal" id="m-roadmap-srdf">
+    <div class="ig-box">
+        <div class="ig-h">
+            <div class="title">5.1 Roadmap V1 – delivery, phases et patchs</div>
+            <div>
+                <button class="btn btn-outline-light btn-sm" data-copy="#m-roadmap-srdf"><i class="fa-regular fa-copy"></i> Copier</button>
+                <button class="btn btn-danger btn-sm" data-close="#m-roadmap-srdf"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+        </div>
+        <div class="ig-b">
+            <div class="ig-tabs">
+                <button class="ig-tab-btn active" data-tab="#tab-road-1">Phases</button>
+                <button class="ig-tab-btn" data-tab="#tab-road-2">Découpage patch</button>
+                <button class="ig-tab-btn" data-tab="#tab-road-3">Livrables</button>
+            </div>
+
+            <div id="tab-road-1" class="ig-tab-content active">
+                <table class="tbl">
+                    <thead><tr><th>Étape</th><th>But</th><th>Contenu</th></tr></thead>
+                    <tbody>
+                        <tr><td>POC</td><td>prouver le modèle</td><td>1 DB, capture → journal → transport → apply, dashboard lag/backlog, bascule manuelle</td></tr>
+                        <tr><td>Pilote prod</td><td>sécuriser le socle</td><td>fencing, witness, failover semi-auto, tests DR récurrents</td></tr>
+                        <tr><td>Généralisation</td><td>ouvrir la plateforme</td><td>connecteurs CDC par techno, normalisation du journal</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div id="tab-road-2" class="ig-tab-content">
+                <div class="code-block">Patch 1  -> Django setup base
+                    Patch 2  -> data model V1
+                    Patch 3  -> agent registration + polling
+                    Patch 4  -> health & replication state
+                    Patch 5  -> dashboard V1
+                    Patch 6  -> action execution
+                    Patch 7  -> failover plan manual
+                    Patch 8  -> PostgreSQL integration
+                    Patch 9  -> MariaDB integration
+                    Patch 10 -> filesync
+                    Patch 11 -> nginx / proxy switch
+                    Patch 12 -> tests & deployment hardening</div>
+            </div>
+
+            <div id="tab-road-3" class="ig-tab-content">
+                <h5>Livrables attendus</h5>
+                <ul class="small">
+                    <li>Guide HTML partagé équipe.</li>
+                    <li>Data model et vues dashboard lisibles.</li>
+                    <li>Runbook failover écrit et testé.</li>
+                    <li>POC PostgreSQL reproductible.</li>
+                    <li>Mesure réelle RTO / RPO.</li>
+                </ul>
+                <div class="ok-box">Ce guide doit devenir le <strong>document d’atterrissage</strong> de tout nouveau collègue sur le projet SRDF.</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 5.2 tests -->
+<div class="ig-modal" id="m-tests-srdf">
+    <div class="ig-box">
+        <div class="ig-h">
+            <div class="title">5.2 Tests DR & validation – non négociable</div>
+            <div>
+                <button class="btn btn-outline-light btn-sm" data-copy="#m-tests-srdf"><i class="fa-regular fa-copy"></i> Copier</button>
+                <button class="btn btn-danger btn-sm" data-close="#m-tests-srdf"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+        </div>
+        <div class="ig-b">
+            <div class="two">
+                <div>
+                    <h5>1️⃣ Plan minimal</h5>
+                    <ul class="small">
+                        <li>Exercice failover mensuel.</li>
+                        <li>Test lien coupé 1h avec rattrapage.</li>
+                        <li>Test corruption logique type DROP TABLE pour valider PITR.</li>
+                        <li>Mesure RTO/RPO réels et pas théoriques.</li>
+                    </ul>
+                </div>
+                <div>
+                    <h5>2️⃣ Critères de succès</h5>
+                    <table class="tbl">
+                        <thead><tr><th>Test</th><th>On valide quoi ?</th></tr></thead>
+                        <tbody>
+                            <tr><td>failover</td><td>promotion, bascule endpoint, retour service</td></tr>
+                            <tr><td>network cut</td><td>journal local + replay + ETA</td></tr>
+                            <tr><td>logical corruption</td><td>backup/PITR hors réplication brute</td></tr>
+                            <tr><td>dashboard audit</td><td>historique exploitable a posteriori</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 5.3 positioning -->
+<div class="ig-modal" id="m-positioning-srdf">
+    <div class="ig-box">
+        <div class="ig-h">
+            <div class="title">5.3 Positionnement par rapport à SRDF et extensions futures</div>
+            <div>
+                <button class="btn btn-outline-light btn-sm" data-copy="#m-positioning-srdf"><i class="fa-regular fa-copy"></i> Copier</button>
+                <button class="btn btn-danger btn-sm" data-close="#m-positioning-srdf"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+        </div>
+        <div class="ig-b">
+            <div class="two">
+                <div>
+                    <h5>1️⃣ Ce que SRDF Like reprend</h5>
+                    <ul class="small">
+                        <li>Réplication distante primary / standby.</li>
+                        <li>Logique de bascule et de reprise sur sinistre.</li>
+                        <li>Exigence de cohérence opératoire et d’observabilité.</li>
+                    </ul>
+
+                    <h5>2️⃣ Ce qu’il simplifie</h5>
+                    <ul class="small">
+                        <li>Approche logicielle ouverte au lieu d’un stack storage propriétaire.</li>
+                        <li>DB-first et produit “PME / labo / infra pragmatique”.</li>
+                        <li>Control plane Django lisible plutôt qu’une boîte noire pure infra.</li>
+                    </ul>
+                </div>
+                <div>
+                    <h5>3️⃣ Extensions futures</h5>
+                    <ul class="small">
+                        <li>Auto-failover encadré par witness.</li>
+                        <li>Connecteurs multi-moteurs supplémentaires.</li>
+                        <li>Filesync avancé et cohérence objet.</li>
+                        <li>Capacity planning et advisor réseau / backlog.</li>
+                        <li>Policy engine et workflows d’exploitation avancés.</li>
+                    </ul>
+                    <div class="info-box">Le bon positionnement n’est pas “copier SRDF au bit près”, mais <strong>fournir un équivalent conceptuel moderne, pilotable, et bankable</strong> pour les environnements Linux / Django / DB.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Cheat sheet -->
+<div class="ig-modal" id="m-cheatsheet-srdf">
+    <div class="ig-box">
+        <div class="ig-h">
+            <div class="title">SRDF Cheat‑sheet – lecture ultra rapide du projet</div>
+            <div>
+                <button class="btn btn-outline-light btn-sm" data-copy="#m-cheatsheet-srdf"><i class="fa-regular fa-copy"></i> Copier</button>
+                <button class="btn btn-danger btn-sm" data-close="#m-cheatsheet-srdf"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+        </div>
+        <div class="ig-b">
+            <table class="tbl">
+                <thead><tr><th>Bloc</th><th>Résumé</th></tr></thead>
+                <tbody>
+                    <tr><td>Goal</td><td>remote async DB facility for IDEO‑LAB</td></tr>
+                    <tr><td>V1 focus</td><td>PostgreSQL first, manual failover, Django control plane</td></tr>
+                    <tr><td>Pipeline</td><td>capture -> journal -> transport -> apply -> verify</td></tr>
+                    <tr><td>Main risk</td><td>backlog growth and unsafe failover</td></tr>
+                    <tr><td>Main protection</td><td>fencing + PITR + observability + tested runbooks</td></tr>
+                    <tr><td>Main models</td><td>sites, pairs, db instances, replication state, health, actions, failover runs</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- POC -->
+<div class="ig-modal" id="m-poc-srdf">
+    <div class="ig-box">
+        <div class="ig-h">
+            <div class="title">POC PostgreSQL – démarrage réaliste</div>
+            <div>
+                <button class="btn btn-outline-light btn-sm" data-copy="#m-poc-srdf"><i class="fa-regular fa-copy"></i> Copier</button>
+                <button class="btn btn-danger btn-sm" data-close="#m-poc-srdf"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+        </div>
+        <div class="ig-b">
+            <div class="two">
+                <div>
+                    <h5>1️⃣ Invariants d’architecture</h5>
+                    <ul class="small">
+                        <li>same major PostgreSQL version on both sites</li>
+                        <li>stable endpoint for app traffic</li>
+                        <li>time sync on both nodes</li>
+                        <li>fast enough storage for WAL and data on standby</li>
+                    </ul>
+                </div>
+                <div>
+                    <h5>2️⃣ Succès du POC</h5>
+                    <ul class="small">
+                        <li>standby connected</li>
+                        <li>replay delay low when idle</li>
+                        <li>manual promote works</li>
+                        <li>dashboard shows lag / backlog / state</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="code-block mt-3">POC checklist:
+                - configure primary and standby
+                - verify replication stats
+                - cut network and observe backlog
+                - promote standby
+                - switch endpoint
+                - measure effective RTO and residual RPO</div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener("DOMContentLoaded", function(){
+        function openModal(sel){ const m=document.querySelector(sel); if(m){ m.classList.add("show"); }}
+        function closeModal(sel){ const m=document.querySelector(sel); if(m){ m.classList.remove("show"); }}
+
+        document.querySelectorAll("[data-open]").forEach(function(el){
+            el.addEventListener("click", function(e){ e.stopPropagation(); openModal(el.getAttribute("data-open")); });
+        });
+        document.querySelectorAll("[data-close]").forEach(function(el){
+            el.addEventListener("click", function(){ closeModal(el.getAttribute("data-close")); });
+        });
+        document.querySelectorAll(".ig-modal").forEach(function(m){
+            m.addEventListener("click", function(e){ if(e.target===m){ m.classList.remove("show"); }});
+        });
+
+        document.querySelectorAll("[data-copy]").forEach(function(btn){
+            btn.addEventListener("click", function(){
+                const sel = btn.getAttribute("data-copy");
+                const el = document.querySelector(sel);
+                if(!el) return;
+                const activeTab = el.querySelector(".ig-tab-content.active");
+                let textToCopy = "";
+                const nodes = activeTab ? activeTab.querySelectorAll("pre, .code-block, p, h5, h4, h6, ul, ol, table") : el.querySelectorAll("pre, .code-block, p, h5, h4, h6, ul, ol, table");
+                nodes.forEach(node => { textToCopy += node.innerText + "\n\n"; });
+                navigator.clipboard.writeText(textToCopy.trim());
+                btn.innerHTML = '<i class="fa-regular fa-circle-check"></i> Copié';
+                setTimeout(() => btn.innerHTML = '<i class="fa-regular fa-copy"></i> Copier', 1500);
+            });
+        });
+
+        document.querySelectorAll(".ig-modal").forEach(function(modal){
+            const tabs = modal.querySelectorAll(".ig-tab-btn");
+            const contents = modal.querySelectorAll(".ig-tab-content");
+            if(!tabs.length) return;
+            tabs.forEach(function(tab){
+                tab.addEventListener("click", function(e){
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const target = tab.getAttribute("data-tab");
+                    tabs.forEach(t => t.classList.remove("active"));
+                    contents.forEach(c => c.classList.remove("active"));
+                    tab.classList.add("active");
+                    const activeContent = modal.querySelector(target);
+                    if(activeContent){ activeContent.classList.add("active"); }
+                });
+            });
+        });
+    });
+</script>
+{% endblock %}

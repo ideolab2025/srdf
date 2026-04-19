@@ -1,0 +1,1 @@
+LOGIN_URL = "/admin-api/login/"

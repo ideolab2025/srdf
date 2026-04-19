@@ -1,0 +1,205 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<div style="padding:20px;">
+
+    <h1 style="margin-bottom:16px;">Transport Recovery Console</h1>
+
+    <div style="margin-bottom:20px;padding:12px;background:#f5f5f5;border:1px solid #ddd;border-radius:6px;">
+        <form method="get" style="display:flex;gap:12px;align-items:end;flex-wrap:wrap;">
+            <div>
+                <label style="display:block;font-weight:bold;margin-bottom:4px;">Replication service</label>
+                <select name="replication_service_id" style="min-width:280px;padding:6px;">
+                    <option value="">All services</option>
+                    {% for service in services %}
+                    <option value="{{ service.id }}" {% if selected_replication_service_id == service.id|stringformat:"s" %}selected{% endif %}>
+                    {{ service.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div>
+                <label style="display:block;font-weight:bold;margin-bottom:4px;">Status</label>
+                <select name="status" style="min-width:160px;padding:6px;">
+                    <option value="failed" {% if selected_status == "failed" %}selected{% endif %}>failed</option>
+                    <option value="ready" {% if selected_status == "ready" %}selected{% endif %}>ready</option>
+                    <option value="sent" {% if selected_status == "sent" %}selected{% endif %}>sent</option>
+                    <option value="acked" {% if selected_status == "acked" %}selected{% endif %}>acked</option>
+                </select>
+            </div>
+
+            <div>
+                <button type="submit" class="button" style="padding:8px 14px;">Filter</button>
+            </div>
+
+            <div>
+                <a href="{{ changelist_url }}" class="button" style="padding:8px 14px;">Back to TransportBatch</a>
+            </div>
+        </form>
+    </div>
+
+    <div style="margin-bottom:12px;">
+        <strong>Total rows:</strong> {{ total_rows }}
+    </div>
+
+
+    <div style="margin-bottom:20px;">
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
+            <div style="padding:12px 16px;background:#263238;color:white;border-radius:6px;min-width:140px;">
+                <div style="font-size:12px;opacity:0.85;">Total batches</div>
+                <div style="font-size:24px;font-weight:bold;">{{ summary.total_batches }}</div>
+            </div>
+
+            <div style="padding:12px 16px;background:#d32f2f;color:white;border-radius:6px;min-width:140px;">
+                <div style="font-size:12px;opacity:0.85;">Failed</div>
+                <div style="font-size:24px;font-weight:bold;">{{ summary.failed_batches }}</div>
+            </div>
+
+            <div style="padding:12px 16px;background:#1976d2;color:white;border-radius:6px;min-width:140px;">
+                <div style="font-size:12px;opacity:0.85;">Ready</div>
+                <div style="font-size:24px;font-weight:bold;">{{ summary.ready_batches }}</div>
+            </div>
+
+            <div style="padding:12px 16px;background:#6a1b9a;color:white;border-radius:6px;min-width:140px;">
+                <div style="font-size:12px;opacity:0.85;">Sent</div>
+                <div style="font-size:24px;font-weight:bold;">{{ summary.sent_batches }}</div>
+            </div>
+
+            <div style="padding:12px 16px;background:#2e7d32;color:white;border-radius:6px;min-width:140px;">
+                <div style="font-size:12px;opacity:0.85;">Acked</div>
+                <div style="font-size:24px;font-weight:bold;">{{ summary.acked_batches }}</div>
+            </div>
+        </div>
+
+        <div style="padding:12px;background:#fafafa;border:1px solid #ddd;border-radius:6px;">
+            <div style="font-weight:bold;margin-bottom:10px;">Summary by service</div>
+
+            <div style="overflow:auto;">
+                <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                    <thead>
+                        <tr style="background:#eceff1;">
+                            <th style="padding:8px;border:1px solid #ddd;text-align:left;">Service</th>
+                            <th style="padding:8px;border:1px solid #ddd;text-align:left;">Failed</th>
+                            <th style="padding:8px;border:1px solid #ddd;text-align:left;">Ready</th>
+                            <th style="padding:8px;border:1px solid #ddd;text-align:left;">Sent</th>
+                            <th style="padding:8px;border:1px solid #ddd;text-align:left;">Acked</th>
+                            <th style="padding:8px;border:1px solid #ddd;text-align:left;">Total</th>
+                            <th style="padding:8px;border:1px solid #ddd;text-align:left;">Open</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in summary.services %}
+                        <tr>
+                            <td style="padding:8px;border:1px solid #ddd;">{{ item.service_name }}</td>
+                            <td style="padding:8px;border:1px solid #ddd;">{{ item.failed_batches }}</td>
+                            <td style="padding:8px;border:1px solid #ddd;">{{ item.ready_batches }}</td>
+                            <td style="padding:8px;border:1px solid #ddd;">{{ item.sent_batches }}</td>
+                            <td style="padding:8px;border:1px solid #ddd;">{{ item.acked_batches }}</td>
+                            <td style="padding:8px;border:1px solid #ddd;">{{ item.total_batches }}</td>
+                            <td style="padding:8px;border:1px solid #ddd;">
+                                <a href="{{ item.console_url }}">Open</a>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="7" style="padding:8px;border:1px solid #ddd;">No service summary available.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div style="overflow:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead>
+                <tr style="background:#263238;color:white;">
+                    <th style="padding:10px;border:1px solid #ddd;text-align:left;">Batch</th>
+                    <th style="padding:10px;border:1px solid #ddd;text-align:left;">Service</th>
+                    <th style="padding:10px;border:1px solid #ddd;text-align:left;">Status</th>
+                    <th style="padding:10px;border:1px solid #ddd;text-align:left;">Retry</th>
+                    <th style="padding:10px;border:1px solid #ddd;text-align:left;">Recovery guard</th>
+                    <th style="padding:10px;border:1px solid #ddd;text-align:left;">Event counts</th>
+                    <th style="padding:10px;border:1px solid #ddd;text-align:left;">Open batches</th>
+                    <th style="padding:10px;border:1px solid #ddd;text-align:left;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                <tr>
+                    <td style="padding:10px;border:1px solid #ddd;vertical-align:top;">
+                        <div><strong>#{{ row.batch.id }}</strong></div>
+                        <div>{{ row.batch.batch_uid }}</div>
+                        <div style="margin-top:6px;">
+                            <a href="{{ row.change_url }}">Open batch</a>
+                        </div>
+                    </td>
+
+                    <td style="padding:10px;border:1px solid #ddd;vertical-align:top;">
+                        {{ row.batch.replication_service.name }}
+                    </td>
+
+                    <td style="padding:10px;border:1px solid #ddd;vertical-align:top;">
+                        {{ row.batch.status }}
+                    </td>
+
+                    <td style="padding:10px;border:1px solid #ddd;vertical-align:top;">
+                        retry_count={{ row.batch.retry_count }}<br>
+                        event_count={{ row.batch.event_count }}
+                    </td>
+
+                    <td style="padding:10px;border:1px solid #ddd;vertical-align:top;">
+                        <div><strong>{{ row.guard.reason_code }}</strong></div>
+                        <div style="margin-top:4px;">{{ row.guard.message }}</div>
+                        {% if row.guard.remaining_seconds %}
+                        <div style="margin-top:4px;">remaining={{ row.guard.remaining_seconds }}s</div>
+                        {% endif %}
+                    </td>
+
+                    <td style="padding:10px;border:1px solid #ddd;vertical-align:top;">
+                        total={{ row.counts.total }}<br>
+                        failed={{ row.counts.failed }}<br>
+                        applied={{ row.counts.applied }}<br>
+                        sent={{ row.counts.sent }}<br>
+                        acked={{ row.counts.acked }}<br>
+                        dead={{ row.counts.dead }}
+                    </td>
+
+                    <td style="padding:10px;border:1px solid #ddd;vertical-align:top;">
+                        {% if row.open_batches %}
+                        {% for ob in row.open_batches %}
+                        <div>
+                            #{{ ob.id }} / {{ ob.status }} / {{ ob.event_count }}
+                        </div>
+                        {% endfor %}
+                        {% else %}
+                        <span style="color:#2e7d32;">none</span>
+                        {% endif %}
+                    </td>
+
+                    <td style="padding:10px;border:1px solid #ddd;vertical-align:top;">
+                        <div style="margin-bottom:8px;">
+                            <a class="button" href="{{ row.resume_url }}" style="background:#d32f2f;color:white;padding:6px 10px;border-radius:4px;text-decoration:none;">Resume now</a>
+                        </div>
+                        <div style="margin-bottom:8px;">
+                            <a class="button" href="{{ row.rebuild_resend_url }}" style="background:#1565c0;color:white;padding:6px 10px;border-radius:4px;text-decoration:none;">Rebuild &amp; resend</a>
+                        </div>
+                        <div>
+                            <a class="button" href="{{ row.dry_run_url }}" style="background:#455a64;color:white;padding:6px 10px;border-radius:4px;text-decoration:none;">Dry-run</a>
+                        </div>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="8" style="padding:16px;border:1px solid #ddd;">
+                        No transport batch found for this filter.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,33 @@
+{% load i18n %}
+
+<div class="dashboard-module-content" style="padding:10px 14px;">
+    <form method="get" action="" style="margin:0;">
+        <input type="hidden" name="toggle_submitted" value="1" />
+
+        {% for key, value in request.GET.items %}
+            {% if key != "toggle_submitted" and key != "show_non_empty_only" %}
+                <input type="hidden" name="{{ key }}" value="{{ value }}" />
+            {% endif %}
+        {% endfor %}
+
+        <label style="font-size:13px; font-weight:bold; color:#1b5e20; cursor:pointer;">
+            <input
+                type="checkbox"
+                name="show_non_empty_only"
+                value="1"
+                {% if module.show_non_empty_only %}checked="checked"{% endif %}
+                onchange="this.form.submit();"
+                style="margin-right:8px;"
+            />
+            Show only data models with records
+        </label>
+
+        <span style="margin-left:14px; color:#777;">
+            Uncheck to display all data models
+        </span>
+
+        <noscript>
+            <button type="submit" style="margin-left:12px;">Apply</button>
+        </noscript>
+    </form>
+</div>
