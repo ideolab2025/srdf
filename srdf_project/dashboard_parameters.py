@@ -57,7 +57,7 @@ class CustomIndexDashboard(Dashboard):
 
         self.children.append(CountedAppList(
             _('----  SRDF TOPOLOGY / INSTALL / SETTINGS  ----')   ,
-            models=( 'srdf.Node'                           ,
+            models=( 'srdf.models.Node'                           ,
                      "srdf.models.ReplicationService"             , 
                      "srdf.models.SRDFInstallProfile"             ,
                      "srdf.models.SRDFInstallRun"                 ,
@@ -115,6 +115,14 @@ class CustomIndexDashboard(Dashboard):
                      "srdf.models.SRDFArchiveRun"                     ,
                      "srdf.models.SRDFArchiveRunItem"                 ,
                      ),
+        ))   
+        
+        
+        self.children.append(CountedAppList(
+            _('---- IDEOLAB AUDIT & SYSTEM LOGS ----'),
+            models=(
+                "ideolab_admin_tools.models.AdminAuditEvent",
+            ),
         ))        
  
 

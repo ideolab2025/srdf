@@ -2,12 +2,14 @@ from django.contrib import admin
 
 # ===================================
 # ==== DATA MODELS GROUP          ===
-from srdf.models              import  *
+from srdf.models                             import  *
+from ideolab_admin_tools.models              import  *
 
 
 # ==================================
 # ==== ADMIN MODULES             ===
 from srdf_project.admin_srdf            import *
+from ideolab_admin_tools.admin          import *
 
 
 
@@ -25,12 +27,29 @@ class EventAdminSite(AdminSite):
 	site_header = "IdeoLab SRDF Admin"
 	site_title  = "IdeoLab SRDF Admin"
 	index_title = "IdeoLab SRDF Admin"
+
+
+
 	
 	
 # -----------------------------------------
 #  ---         API  admin and Options   ---
 parameters_admin_site      = EventAdminSite(name='parameters_admin'       )
 parameters_admin_site_2024 = EventAdminSite(name='parameters_admin_2024'  )
+
+
+
+# -----------------------------------------
+# -----------------------------------------
+#  --- SYSTEM ADMIN                     ---
+# -----------------------------------------
+# -----------------------------------------
+
+parameters_admin_site.register(AdminAuditEvent                   , AdminAuditEventAdmin       )
+
+
+
+
 
 
 # -----------------------------------------

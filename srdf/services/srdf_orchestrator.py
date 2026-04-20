@@ -114,12 +114,68 @@ class SRDFOrchestrator:
         initiated_by="srdf_daemon",
         stop_on_service_error=False,
         progress_callback=None,
-    ):
+        ):
         self.sleep_seconds = int(sleep_seconds or 10)
         self.service_names = service_names or []
         self.initiated_by = initiated_by or "srdf_daemon"
         self.stop_on_service_error = bool(stop_on_service_error)
         self.progress_callback = progress_callback
+        
+        
+    def _build_pending_transport_payload_events(self, service, limit=100):
+        limit = max(int(limit or 100), 1)
+
+        pending_events = list(
+            OutboundChangeEvent.objects
+            .filter(
+                replication_service=service,
+                status="pending",
+            )
+            .order_by("id")[:limit]
+        )
+
+        payload_events = []
+        for event in pending_events:
+            payload_events.append({
+                "id": event.id,
+                "event_uid": event.event_uid or "",
+                "transaction_id": event.transaction_id or "",
+                "engine": event.engine or "",
+                "event_family": event.event_family or "dml",
+                "database_name": event.database_name or "",
+                "table_name": event.table_name or "",
+                "operation": event.operation or "",
+                "object_type": event.object_type or "",
+                "ddl_action": event.ddl_action or "",
+                "object_name": event.object_name or "",
+                "parent_object_name": event.parent_object_name or "",
+                "raw_sql": event.raw_sql or "",
+                "log_file": event.log_file or "",
+                "log_pos": int(event.log_pos or 0),
+                "primary_key_data": event.primary_key_data or {},
+                "before_data": event.before_data or {},
+                "after_data": event.after_data or {},
+                "event_payload": event.event_payload or {},
+                "created_at": event.created_at.isoformat() if event.created_at else None,
+            })
+
+        return pending_events, payload_events
+
+
+    def _get_transport_codec_settings(self, service):
+        config = service.config or {}
+        if not isinstance(config, dict):
+            config = {}
+
+        compression = str(config.get("transport_compression") or "zlib").strip().lower()
+        encryption = str(config.get("transport_encryption") or "xor").strip().lower()
+        encryption_key = str(config.get("transport_encryption_key") or "").strip()
+
+        return {
+            "compression": compression or "zlib",
+            "encryption": encryption or "xor",
+            "encryption_key": encryption_key,
+        }    
 
     def run_once(self):
         run_uid = f"srdf-run-{timezone.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
@@ -1855,16 +1911,138 @@ class SRDFOrchestrator:
         )    
     
 
-    def _phase_compress(self, service, state, request_payload):
-        return self._phase_not_implemented(
-            phase_name=self.PHASE_COMPRESS,
-            next_phase=self.PHASE_ENCRYPT,
+    def _phase_compress(self, service, runtime_state, orchestrator_run):
+        pending_events, payload_events = self._build_pending_transport_payload_events(
+            service=service,
+            limit=100,
         )
 
-    def _phase_encrypt(self, service, state, request_payload):
-        return self._phase_not_implemented(
-            phase_name=self.PHASE_ENCRYPT,
+        logical_payload = build_logical_payload(
+            replication_service=service,
+            payload_events=payload_events,
+            extra_payload={
+                "created_at": timezone.now().isoformat(),
+                "phase": "compress",
+                "orchestrator_run_id": orchestrator_run.id if orchestrator_run else 0,
+            },
+        )
+
+        codec_settings = self._get_transport_codec_settings(service)
+        compression = codec_settings.get("compression") or "zlib"
+
+        encoded = encode_transport_payload(
+            logical_payload=logical_payload,
+            compression=compression,
+            encryption="none",
+            encryption_key="",
+        )
+
+        AuditEvent.objects.create(
+            event_type="srdf_phase_compress_completed",
+            level="info",
+            node=service.source_node,
+            message=f"Compress phase completed for service '{service.name}'",
+            created_by=self.initiated_by,
+            payload={
+                "replication_service_id": service.id,
+                "orchestrator_run_id": orchestrator_run.id if orchestrator_run else 0,
+                "pending_event_count": len(pending_events),
+                "compression": compression,
+                "logical_checksum": encoded.get("logical_checksum") or "",
+                "logical_size_bytes": int(encoded.get("logical_size_bytes") or 0),
+                "compressed_size_bytes": int(encoded.get("compressed_size_bytes") or 0),
+            },
+        )
+
+        return PhaseResult(
+            status="success",
+            return_code="PHASE_COMPRESS_OK",
+            processed=len(pending_events),
+            success=len(pending_events),
+            failed=0,
+            skipped=0,
+            next_phase=self.PHASE_ENCRYPT,
+            result_payload={
+                "transport_payload_stage": "compressed",
+                "pending_event_count": len(pending_events),
+                "compression": compression,
+                "encryption": "none",
+                "encoded_payload": encoded.get("encoded_payload") or "",
+                "logical_checksum": encoded.get("logical_checksum") or "",
+                "logical_size_bytes": int(encoded.get("logical_size_bytes") or 0),
+                "compressed_size_bytes": int(encoded.get("compressed_size_bytes") or 0),
+                "encoded_size_bytes": int(encoded.get("encoded_size_bytes") or 0),
+                "transport_meta": encoded.get("transport_meta") or {},
+            },
+        )
+
+    def _phase_encrypt(self, service, runtime_state, orchestrator_run):
+        pending_events, payload_events = self._build_pending_transport_payload_events(
+            service=service,
+            limit=100,
+        )
+
+        logical_payload = build_logical_payload(
+            replication_service=service,
+            payload_events=payload_events,
+            extra_payload={
+                "created_at": timezone.now().isoformat(),
+                "phase": "encrypt",
+                "orchestrator_run_id": orchestrator_run.id if orchestrator_run else 0,
+            },
+        )
+
+        codec_settings = self._get_transport_codec_settings(service)
+        compression = codec_settings.get("compression") or "zlib"
+        encryption = codec_settings.get("encryption") or "xor"
+        encryption_key = codec_settings.get("encryption_key") or ""
+
+        encoded = encode_transport_payload(
+            logical_payload=logical_payload,
+            compression=compression,
+            encryption=encryption,
+            encryption_key=encryption_key,
+        )
+
+        AuditEvent.objects.create(
+            event_type="srdf_phase_encrypt_completed",
+            level="info",
+            node=service.source_node,
+            message=f"Encrypt phase completed for service '{service.name}'",
+            created_by=self.initiated_by,
+            payload={
+                "replication_service_id": service.id,
+                "orchestrator_run_id": orchestrator_run.id if orchestrator_run else 0,
+                "pending_event_count": len(pending_events),
+                "compression": compression,
+                "encryption": encryption,
+                "logical_checksum": encoded.get("logical_checksum") or "",
+                "logical_size_bytes": int(encoded.get("logical_size_bytes") or 0),
+                "compressed_size_bytes": int(encoded.get("compressed_size_bytes") or 0),
+                "encoded_size_bytes": int(encoded.get("encoded_size_bytes") or 0),
+            },
+        )
+
+        return PhaseResult(
+            status="success",
+            return_code="PHASE_ENCRYPT_OK",
+            processed=len(pending_events),
+            success=len(pending_events),
+            failed=0,
+            skipped=0,
             next_phase=self.PHASE_BATCH_BUILD,
+            result_payload={
+                "transport_payload_stage": "encrypted",
+                "pending_event_count": len(pending_events),
+                "compression": compression,
+                "encryption": encryption,
+                "encoded_payload": encoded.get("encoded_payload") or "",
+                "logical_checksum": encoded.get("logical_checksum") or "",
+                "logical_size_bytes": int(encoded.get("logical_size_bytes") or 0),
+                "compressed_size_bytes": int(encoded.get("compressed_size_bytes") or 0),
+                "encoded_size_bytes": int(encoded.get("encoded_size_bytes") or 0),
+                "transport_meta": encoded.get("transport_meta") or {},
+            },
         )
     
     

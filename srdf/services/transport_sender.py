@@ -236,6 +236,7 @@ def hard_reset_transport_state_once(
     reset_source_binlog=False,
     confirm_reset_source_binlog=False,
     initiated_by="srdf_sender",
+    preserve_cron_execution_id=0,
     ):
     
     replication_service, err = _get_replication_service(replication_service_id)
@@ -320,10 +321,13 @@ def hard_reset_transport_state_once(
             replication_service=replication_service
         ).delete()
 
-        SRDFCronExecution.objects.filter(
+        cron_qs = SRDFCronExecution.objects.filter(
             replication_service=replication_service
-        ).delete()
-
+        )
+        if int(preserve_cron_execution_id or 0) > 0:
+            cron_qs = cron_qs.exclude(id=int(preserve_cron_execution_id))
+        cron_qs.delete()
+        
         InboundChangeEvent.objects.filter(
             replication_service=replication_service
         ).delete()

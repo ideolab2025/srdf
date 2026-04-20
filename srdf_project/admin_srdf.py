@@ -6,9 +6,10 @@ from django.contrib import admin
 import json
 from django.utils.html import format_html
 from django.utils import timezone
-
 from srdf.models import *
 
+
+from ideolab_admin_tools.admin_audit import AuditedAdminMixin
 
 
 from django import forms
@@ -231,7 +232,7 @@ class SourceTableCatalogAdminForm(forms.ModelForm):
         model = SourceTableCatalog
         fields = "__all__"
 
-class NodeAdmin(admin.ModelAdmin):
+class NodeAdmin(AuditedAdminMixin, admin.ModelAdmin):
     list_display = ("name", "hostname", "db_port", "site", "role", "status", "is_enabled", "last_seen_at")
 
     list_filter = ("role", "status", "site", "is_enabled")

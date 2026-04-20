@@ -391,6 +391,7 @@ class Command(BaseCommand):
                         service_id=service_id,
                         reset_source_binlog=reset_source_binlog,
                         confirm_reset_source_binlog=confirm_reset_source_binlog,
+                        preserve_cron_execution_id=cron_exec.id,
                     )
 
                 elif action == "cycle":
@@ -744,7 +745,12 @@ class Command(BaseCommand):
         }
     
 
-    def _handle_hard_reset(self, service_id, reset_source_binlog=False, confirm_reset_source_binlog=False):
+    def _handle_hard_reset(self, 
+                           service_id, 
+                           reset_source_binlog=False, 
+                           confirm_reset_source_binlog=False,
+                           preserve_cron_execution_id=0,
+                           ):
         if not service_id:
             raise CommandError("--service-id is required for --action hard_reset")
 
@@ -760,6 +766,7 @@ class Command(BaseCommand):
             reset_source_binlog=reset_source_binlog,
             confirm_reset_source_binlog=confirm_reset_source_binlog,
             initiated_by="srdf_transport:hard_reset",
+            preserve_cron_execution_id=preserve_cron_execution_id,
         )
 
         self.stdout.write(
