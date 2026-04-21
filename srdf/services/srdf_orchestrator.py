@@ -608,9 +608,21 @@ class SRDFOrchestrator:
                     "skipped": True,
                 }
 
+
             state.last_run_started_at = timezone.now()
             state.last_error = ""
             state.save(update_fields=["last_run_started_at", "last_error", "updated_at"])
+
+            self.progress_callback(
+                (
+                    f"[SERVICE START] "
+                    f"service={service.name} "
+                    f"cycle={int(state.cycle_number or 0) + 1} "
+                    f"current_phase={state.current_phase or '-'} "
+                    f"next_phase={state.next_phase or self.PHASE_CAPTURE}"
+                ),
+                "info",
+            )            
 
             phase_results = []
             next_phase = state.next_phase or self.PHASE_CAPTURE
@@ -655,16 +667,39 @@ class SRDFOrchestrator:
                         "phase_results": phase_results,
                     }
 
+
                 state.current_phase = next_phase
                 state.save(update_fields=["current_phase", "updated_at"])
 
                 handler = self._get_phase_handler(next_phase)
-                request_payload = self._build_phase_request(service=service, state=state, phase_name=next_phase)
+                request_payload = self._build_phase_request(
+                    service=service,
+                    state=state,
+                    phase_name=next_phase,
+                )
+
+                self.progress_callback(
+                    (
+                        f"[PHASE START] "
+                        f"service={service.name} "
+                        f"phase={next_phase} "
+                        f"cycle={int(state.cycle_number or 0)} "
+                        f"request_keys={','.join(sorted(request_payload.keys())) if request_payload else '-'}"
+                    ),
+                    "info",
+                )
 
                 started_phase_perf = time.perf_counter()
-                
-                
+
                 result = handler(service=service, state=state, request_payload=request_payload)
+
+                self._emit_phase_summary(
+                    service=service,
+                    phase_name=next_phase,
+                    result=result,
+                    when="END",
+                )                
+                
                 if not isinstance(result, PhaseResult):
                     raise SRDFOrchestratorError(f"Phase '{next_phase}' returned invalid result object")
 
@@ -685,8 +720,22 @@ class SRDFOrchestrator:
                     phase_name=next_phase,
                     result=result,
                 )
+                
 
                 if result.status == "failed":
+                    
+                    self.progress_callback(
+                        (
+                            f"[SERVICE END] "
+                            f"service={service.name} "
+                            f"status=failed "
+                            f"phase={next_phase} "
+                            f"return_code={result.return_code} "
+                            f"error={result.error_message or '-'}"
+                        ),
+                        "error",
+                    )                    
+                    
                     return {
                         "ok": False,
                         "service": service.name,
@@ -696,6 +745,19 @@ class SRDFOrchestrator:
                     }
 
                 if result.status == "retry":
+                    
+                    self.progress_callback(
+                        (
+                            f"[SERVICE END] "
+                            f"service={service.name} "
+                            f"status=retry "
+                            f"phase={next_phase} "
+                            f"return_code={result.return_code} "
+                            f"retry_after={int(result.retry_after_seconds or 0)}"
+                        ),
+                        "warning",
+                    )
+                    
                     return {
                         "ok": True,
                         "service": service.name,
@@ -728,6 +790,19 @@ class SRDFOrchestrator:
                     "updated_at",
                 ]
             )
+            
+            self.progress_callback(
+                (
+                    f"[SERVICE END] "
+                    f"service={service.name} "
+                    f"status=success "
+                    f"duration_seconds={duration_seconds} "
+                    f"phase_count={len(phase_results)} "
+                    f"last_return_code={state.last_return_code or '-'} "
+                    f"next_phase_reset={self.PHASE_CAPTURE}"
+                ),
+                "success",
+            )            
 
             return {
                 "ok": True,
@@ -735,8 +810,15 @@ class SRDFOrchestrator:
                 "return_code": RETURN_OK,
                 "duration_seconds": duration_seconds,
                 "phase_results": phase_results,
+                "summary": {
+                    "service_name": service.name,
+                    "phase_count": len(phase_results),
+                    "last_success_phase": state.last_success_phase or "",
+                    "last_return_code": state.last_return_code or "",
+                    "next_phase_after_cycle": state.next_phase or "",
+                },
             }
-
+        
         except Exception as exc:
             duration_seconds = round(time.perf_counter() - started_perf, 3)
             state.current_phase = self.PHASE_ERROR
@@ -762,13 +844,32 @@ class SRDFOrchestrator:
                     "updated_at",
                 ]
             )
+            
+            self.progress_callback(
+                (
+                    f"[SERVICE EXCEPTION] "
+                    f"service={service.name} "
+                    f"current_phase={state.current_phase or '-'} "
+                    f"next_phase={state.next_phase or '-'} "
+                    f"error={str(exc)}"
+                ),
+                "error",
+            )            
+            
             return {
                 "ok": False,
                 "service": service.name,
                 "return_code": RETURN_FAILED,
                 "error": str(exc),
+                "summary": {
+                    "service_name": service.name,
+                    "current_phase": state.current_phase or "",
+                    "next_phase": state.next_phase or "",
+                    "last_return_code": state.last_return_code or "",
+                    "last_error": state.last_error or "",
+                },
             }
-
+        
         finally:
             self._release_service_lock(service=service, owner_token=lock_token)
 
@@ -1856,7 +1957,7 @@ class SRDFOrchestrator:
         return PhaseResult(
             status="success",
             return_code=return_code,
-            next_phase=self.PHASE_BATCH_BUILD,
+            next_phase=self.PHASE_COMPRESS,
             processed_count=processed_count,
             success_count=survivor_count,
             failed_count=0,
@@ -1911,32 +2012,32 @@ class SRDFOrchestrator:
         )    
     
 
-    def _phase_compress(self, service, runtime_state, orchestrator_run):
+    def _phase_compress(self, service, state, request_payload):
         pending_events, payload_events = self._build_pending_transport_payload_events(
             service=service,
             limit=100,
         )
-
+    
         logical_payload = build_logical_payload(
             replication_service=service,
             payload_events=payload_events,
             extra_payload={
                 "created_at": timezone.now().isoformat(),
                 "phase": "compress",
-                "orchestrator_run_id": orchestrator_run.id if orchestrator_run else 0,
+                "cycle_number": int(state.cycle_number or 0),
             },
         )
-
+    
         codec_settings = self._get_transport_codec_settings(service)
         compression = codec_settings.get("compression") or "zlib"
-
+    
         encoded = encode_transport_payload(
             logical_payload=logical_payload,
             compression=compression,
             encryption="none",
             encryption_key="",
         )
-
+    
         AuditEvent.objects.create(
             event_type="srdf_phase_compress_completed",
             level="info",
@@ -1945,7 +2046,7 @@ class SRDFOrchestrator:
             created_by=self.initiated_by,
             payload={
                 "replication_service_id": service.id,
-                "orchestrator_run_id": orchestrator_run.id if orchestrator_run else 0,
+                "cycle_number": int(state.cycle_number or 0),
                 "pending_event_count": len(pending_events),
                 "compression": compression,
                 "logical_checksum": encoded.get("logical_checksum") or "",
@@ -1953,16 +2054,27 @@ class SRDFOrchestrator:
                 "compressed_size_bytes": int(encoded.get("compressed_size_bytes") or 0),
             },
         )
-
+        
+        self.progress_callback(
+            (
+                f"Compress completed service={service.name} "
+                f"pending_event_count={len(pending_events)} "
+                f"compression={compression} "
+                f"logical_size_bytes={int(encoded.get('logical_size_bytes') or 0)} "
+                f"compressed_size_bytes={int(encoded.get('compressed_size_bytes') or 0)}"
+            ),
+            "info",
+        )        
+    
         return PhaseResult(
             status="success",
             return_code="PHASE_COMPRESS_OK",
-            processed=len(pending_events),
-            success=len(pending_events),
-            failed=0,
-            skipped=0,
             next_phase=self.PHASE_ENCRYPT,
-            result_payload={
+            processed_count=len(pending_events),
+            success_count=len(pending_events),
+            failed_count=0,
+            skipped_count=0,
+            payload={
                 "transport_payload_stage": "compressed",
                 "pending_event_count": len(pending_events),
                 "compression": compression,
@@ -1975,35 +2087,36 @@ class SRDFOrchestrator:
                 "transport_meta": encoded.get("transport_meta") or {},
             },
         )
-
-    def _phase_encrypt(self, service, runtime_state, orchestrator_run):
+    
+    
+    def _phase_encrypt(self, service, state, request_payload):
         pending_events, payload_events = self._build_pending_transport_payload_events(
             service=service,
             limit=100,
         )
-
+    
         logical_payload = build_logical_payload(
             replication_service=service,
             payload_events=payload_events,
             extra_payload={
                 "created_at": timezone.now().isoformat(),
                 "phase": "encrypt",
-                "orchestrator_run_id": orchestrator_run.id if orchestrator_run else 0,
+                "cycle_number": int(state.cycle_number or 0),
             },
         )
-
+    
         codec_settings = self._get_transport_codec_settings(service)
         compression = codec_settings.get("compression") or "zlib"
         encryption = codec_settings.get("encryption") or "xor"
         encryption_key = codec_settings.get("encryption_key") or ""
-
+    
         encoded = encode_transport_payload(
             logical_payload=logical_payload,
             compression=compression,
             encryption=encryption,
             encryption_key=encryption_key,
         )
-
+    
         AuditEvent.objects.create(
             event_type="srdf_phase_encrypt_completed",
             level="info",
@@ -2012,7 +2125,7 @@ class SRDFOrchestrator:
             created_by=self.initiated_by,
             payload={
                 "replication_service_id": service.id,
-                "orchestrator_run_id": orchestrator_run.id if orchestrator_run else 0,
+                "cycle_number": int(state.cycle_number or 0),
                 "pending_event_count": len(pending_events),
                 "compression": compression,
                 "encryption": encryption,
@@ -2022,16 +2135,29 @@ class SRDFOrchestrator:
                 "encoded_size_bytes": int(encoded.get("encoded_size_bytes") or 0),
             },
         )
-
+        
+        self.progress_callback(
+            (
+                f"Encrypt completed service={service.name} "
+                f"pending_event_count={len(pending_events)} "
+                f"compression={compression} "
+                f"encryption={encryption} "
+                f"logical_size_bytes={int(encoded.get('logical_size_bytes') or 0)} "
+                f"compressed_size_bytes={int(encoded.get('compressed_size_bytes') or 0)} "
+                f"encoded_size_bytes={int(encoded.get('encoded_size_bytes') or 0)}"
+            ),
+            "info",
+        )        
+    
         return PhaseResult(
             status="success",
             return_code="PHASE_ENCRYPT_OK",
-            processed=len(pending_events),
-            success=len(pending_events),
-            failed=0,
-            skipped=0,
             next_phase=self.PHASE_BATCH_BUILD,
-            result_payload={
+            processed_count=len(pending_events),
+            success_count=len(pending_events),
+            failed_count=0,
+            skipped_count=0,
+            payload={
                 "transport_payload_stage": "encrypted",
                 "pending_event_count": len(pending_events),
                 "compression": compression,
@@ -2043,8 +2169,7 @@ class SRDFOrchestrator:
                 "encoded_size_bytes": int(encoded.get("encoded_size_bytes") or 0),
                 "transport_meta": encoded.get("transport_meta") or {},
             },
-        )
-    
+        )    
     
     
 
@@ -2731,6 +2856,39 @@ class SRDFOrchestrator:
                 "implemented": False,
             },
         )
+    
+    
+    def _emit_phase_summary(self, service, phase_name, result, when="END"):
+        if not self.progress_callback:
+            return
+
+        if not isinstance(result, PhaseResult):
+            self.progress_callback(
+                f"[PHASE {when}] service={service.name} phase={phase_name} invalid_result_object",
+                "error",
+            )
+            return
+
+        payload = result.payload or {}
+
+        self.progress_callback(
+            (
+                f"[PHASE {when}] "
+                f"service={service.name} "
+                f"phase={phase_name} "
+                f"status={result.status} "
+                f"return_code={result.return_code} "
+                f"next_phase={result.next_phase or '-'} "
+                f"processed={int(result.processed_count or 0)} "
+                f"success={int(result.success_count or 0)} "
+                f"failed={int(result.failed_count or 0)} "
+                f"skipped={int(result.skipped_count or 0)} "
+                f"retry_after={int(result.retry_after_seconds or 0)} "
+                f"error={result.error_message or '-'} "
+                f"payload_keys={','.join(sorted(payload.keys())) if isinstance(payload, dict) and payload else '-'}"
+            ),
+            "error" if result.status == "failed" else "warning" if result.status == "retry" else "info",
+        )    
 
 
     def _emit(self, message, detail="", level="info"):

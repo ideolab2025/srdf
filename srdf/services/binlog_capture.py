@@ -1673,8 +1673,12 @@ def _collect_binlog_control_rows(
     else:
         debug = bool(debug)
 
-    start_log_file = checkpoint.log_file or ""
-    start_log_pos = int(checkpoint.log_pos or 0)
+
+    business_start_log_file, business_start_log_pos = _get_business_checkpoint_position(checkpoint)
+    read_start_log_file, read_start_log_pos = _get_read_checkpoint_position(checkpoint)
+
+    start_log_file = read_start_log_file or business_start_log_file or ""
+    start_log_pos = int(read_start_log_pos or business_start_log_pos or 0)
 
     if not start_log_file:
         raise BinlogCaptureError("Missing checkpoint.log_file for control mode")
@@ -2619,15 +2623,24 @@ def capture_binlog_once(
     config = None
     checkpoint = None
 
+
     captured_count = 0
+    captured_dml_count = 0
+    captured_ddl_count = 0
+
     skipped_count = 0
+    hard_excluded_count = 0
+    rule_filtered_count = 0
+    column_resolution_error_count = 0
+    internal_noise_only_count = 0
+    
     ignored_older_count = 0
     scanned_event_count = 0
     scanned_row_count = 0
     rotate_event_count = 0
     row_event_count = 0
     older_streak_count = 0
-    stop_reason = "not_started"
+    stop_reason = "not_started"    
 
     started_at_ts = time.monotonic()
 
@@ -2641,11 +2654,23 @@ def capture_binlog_once(
     last_older_event_seen = None
     first_non_older_event_seen = None
     traced_events = []
+    
 
     start_log_file = ""
     start_log_pos = 0
-    last_consumed_log_file = ""
-    last_consumed_log_pos = 0
+
+    read_start_log_file = ""
+    read_start_log_pos = 0
+
+    business_start_log_file = ""
+    business_start_log_pos = 0
+
+    last_read_safe_log_file = ""
+    last_read_safe_log_pos = 0
+
+    last_business_safe_log_file = ""
+    last_business_safe_log_pos = 0
+    
 
     progress_message_count = 0
     progress_snapshots = []
@@ -2672,6 +2697,11 @@ def capture_binlog_once(
             scanned_event_count=0,
             scanned_row_count=0,
             rotate_event_count=0,
+            captured_dml_count=0,
+            captured_ddl_count=0,
+            hard_excluded_count=0,
+            rule_filtered_count=0,
+            column_resolution_error_count=0,            
             row_event_count=0,
             older_streak_count=0,
             elapsed_seconds=round(time.monotonic() - started_at_ts, 3),
@@ -2871,9 +2901,17 @@ def capture_binlog_once(
 
     if force_current_pos or not checkpoint.log_file:
         current_log_file, current_log_pos = _fetch_current_master_status(replication_service)
-        checkpoint.log_file = current_log_file
-        checkpoint.log_pos = int(current_log_pos or 4)
-        checkpoint.save(update_fields=["log_file", "log_pos", "updated_at"])
+
+        _set_capture_checkpoint_positions(
+            checkpoint=checkpoint,
+            read_log_file=current_log_file,
+            read_log_pos=int(current_log_pos or 4),
+            business_log_file=current_log_file,
+            business_log_pos=int(current_log_pos or 4),
+            transaction_id="",
+            extra_checkpoint_data={},
+        )
+
 
         if initialize_only:
             AuditEvent.objects.create(
@@ -2915,7 +2953,15 @@ def capture_binlog_once(
     started_at_ts = time.monotonic()
 
     captured_count      = 0
+    captured_dml_count  = 0
+    captured_ddl_count  = 0
+
     skipped_count       = 0
+    hard_excluded_count = 0
+    rule_filtered_count = 0
+    column_resolution_error_count = 0
+    internal_noise_only_count = 0
+    
     ignored_older_count = 0
     scanned_event_count = 0
     scanned_row_count   = 0
@@ -2930,17 +2976,26 @@ def capture_binlog_once(
     last_older_event_seen = None
     first_non_older_event_seen = None
 
-    start_log_file = checkpoint.log_file or ""
-    start_log_pos = int(checkpoint.log_pos or 0)
+    business_start_log_file, business_start_log_pos = _get_business_checkpoint_position(checkpoint)
+    read_start_log_file, read_start_log_pos = _get_read_checkpoint_position(checkpoint)
 
+    start_log_file = read_start_log_file or business_start_log_file or ""
+    start_log_pos = int(read_start_log_pos or business_start_log_pos or 0)
+    
     current_master_before_file = ""
     current_master_before_pos = 0
     current_master_after_file = ""
     current_master_after_pos = 0
 
-    last_consumed_log_file    = start_log_file
-    last_consumed_log_pos     = start_log_pos
+    last_read_safe_log_file = start_log_file
+    last_read_safe_log_pos = int(start_log_pos or 0)
+
+    last_business_safe_log_file = business_start_log_file or start_log_file
+    last_business_safe_log_pos = int(business_start_log_pos or start_log_pos or 0)  
+    
     pending_outbound_events   = []
+    pending_last_log_file     = ""
+    pending_last_log_pos      = 0    
     wagon_seq                 = 0
     current_wagon_id          = ""
     current_wagon_key         = ""
@@ -2999,16 +3054,45 @@ def capture_binlog_once(
     
     def _flush_pending_outbound_events():
         nonlocal pending_outbound_events
+        nonlocal pending_last_log_file
+        nonlocal pending_last_log_pos
+        nonlocal last_read_safe_log_file
+        nonlocal last_read_safe_log_pos
+        nonlocal last_business_safe_log_file
+        nonlocal last_business_safe_log_pos
 
         if not pending_outbound_events:
             return 0
 
         flushed_count = _bulk_save_outbound_events(pending_outbound_events)
+
+        if flushed_count > 0:
+            if _is_position_after(
+                pending_last_log_file,
+                pending_last_log_pos,
+                last_read_safe_log_file,
+                last_read_safe_log_pos,
+                ):
+                last_read_safe_log_file = pending_last_log_file
+                last_read_safe_log_pos = int(pending_last_log_pos or 0)
+
+            if _is_position_after(
+                pending_last_log_file,
+                pending_last_log_pos,
+                last_business_safe_log_file,
+                last_business_safe_log_pos,
+                ):
+                last_business_safe_log_file = pending_last_log_file
+                last_business_safe_log_pos = int(pending_last_log_pos or 0)
+
         pending_outbound_events = []
+        pending_last_log_file = ""
+        pending_last_log_pos = 0
 
         _emit_progress(force=False, reason="bulk_flush")
 
         return flushed_count
+    
     
     
     def _build_wagon_key(item):
@@ -3081,11 +3165,20 @@ def capture_binlog_once(
         if elapsed_seconds > 0:
             rows_per_sec = round(float(scanned_row_count) / float(elapsed_seconds), 2)
 
+
         progress_payload = {
             "reason": reason,
             "elapsed_seconds": round(elapsed_seconds, 3),
+
             "captured_count": int(captured_count or 0),
+            "captured_dml_count": int(captured_dml_count or 0),
+            "captured_ddl_count": int(captured_ddl_count or 0),
+
             "skipped_count": int(skipped_count or 0),
+            "hard_excluded_count": int(hard_excluded_count or 0),
+            "rule_filtered_count": int(rule_filtered_count or 0),
+            "column_resolution_error_count": int(column_resolution_error_count or 0),
+
             "ignored_older_count": int(ignored_older_count or 0),
             "scanned_event_count": int(scanned_event_count or 0),
             "scanned_row_count": int(scanned_row_count or 0),
@@ -3093,13 +3186,13 @@ def capture_binlog_once(
             "rotate_event_count": int(rotate_event_count or 0),
             "wagon_seq": int(wagon_seq or 0),
             "pending_buffer_size": len(pending_outbound_events),
-            "current_log_file": last_consumed_log_file or start_log_file or "",
-            "current_log_pos": int(last_consumed_log_pos or start_log_pos or 0),
+            "current_log_file": last_read_safe_log_file or start_log_file or "",
+            "current_log_pos": int(last_read_safe_log_pos or start_log_pos or 0),
             "window_end_file": window_end_file or "",
             "window_end_pos": int(window_end_pos or 0),
             "rows_per_sec": rows_per_sec,
         }
-
+        
         progress_message_count += 1
 
         if len(progress_snapshots) < 50:
@@ -3110,7 +3203,9 @@ def capture_binlog_once(
         logger.warning(
             "[SRDF_CAPTURE][PROGRESS] "
             "service_id=%s | reason=%s | elapsed=%ss | "
-            "eligible_events=%s | raw_rows=%s | captured=%s | skipped=%s | "
+            "eligible_events=%s | raw_rows=%s | "
+            "captured=%s | dml=%s | ddl=%s | "
+            "skipped=%s | hard_excluded=%s | rule_filtered=%s | column_errors=%s | "
             "wagons=%s | pending=%s | current=%s:%s | end=%s:%s | rps=%s",
             replication_service.id,
             progress_payload["reason"],
@@ -3118,7 +3213,12 @@ def capture_binlog_once(
             progress_payload["scanned_event_count"],
             progress_payload["scanned_row_count"],
             progress_payload["captured_count"],
+            progress_payload["captured_dml_count"],
+            progress_payload["captured_ddl_count"],
             progress_payload["skipped_count"],
+            progress_payload["hard_excluded_count"],
+            progress_payload["rule_filtered_count"],
+            progress_payload["column_resolution_error_count"],
             progress_payload["wagon_seq"],
             progress_payload["pending_buffer_size"],
             progress_payload["current_log_file"],
@@ -3127,7 +3227,6 @@ def capture_binlog_once(
             progress_payload["window_end_pos"],
             progress_payload["rows_per_sec"],
         )        
-        
 
         last_progress_event_count = scanned_event_count
         last_progress_ts = now_ts    
@@ -3228,7 +3327,9 @@ def capture_binlog_once(
         logger.warning(" service_name                : %s", replication_service.name)
         logger.warning(" engine                      : %s", resolved_engine)
         logger.warning(" initiated_by                : %s", initiated_by)
-        logger.warning(" checkpoint_start            : %s:%s", start_log_file or "", start_log_pos or 0)
+        logger.warning(" read_cursor_start           : %s:%s", read_start_log_file or "", int(read_start_log_pos or 0))
+        logger.warning(" business_checkpoint_start   : %s:%s", business_start_log_file or "", int(business_start_log_pos or 0))
+        logger.warning(" effective_start             : %s:%s", start_log_file or "", start_log_pos or 0)        
         logger.warning(" current_master_before       : %s:%s", current_master_before_file or "", current_master_before_pos or 0)
         logger.warning(" estimated_backlog_bytes     : %s", resolved_settings_payload["estimated_backlog_bytes"])
         logger.warning(" estimated_backlog_file_count: %s", resolved_settings_payload["estimated_backlog_file_count"])
@@ -3291,11 +3392,24 @@ def capture_binlog_once(
                 created_by=initiated_by,
                 payload={
                     "replication_service_id": replication_service.id,
-                    "captured_count": 0,
-                    "skipped_count": 0,
-                    "ignored_older_count": 0,
-                    "scanned_event_count": 0,
-                    "scanned_row_count": 0,
+                    
+                    "captured_count": captured_count,
+                    "captured_dml_count": captured_dml_count,
+                    "captured_ddl_count": captured_ddl_count,
+    
+                    "skipped_count": skipped_count,
+                    "hard_excluded_count": hard_excluded_count,
+                    "rule_filtered_count": rule_filtered_count,
+                    "column_resolution_error_count": column_resolution_error_count,
+                    "read_log_file": start_log_file or "",
+                    "read_log_pos": start_log_pos or 0,
+                    "business_log_file": business_start_log_file or start_log_file or "",
+                    "business_log_pos": int(business_start_log_pos or start_log_pos or 0),
+                    "internal_noise_only_count": 0,                    
+    
+                    "ignored_older_count": ignored_older_count,
+                    "scanned_event_count": scanned_event_count,
+                    "scanned_row_count": scanned_row_count,                    
                     "rotate_event_count": 0,
                     "row_event_count": 0,
                     "older_streak_count": 0,
@@ -3344,8 +3458,18 @@ def capture_binlog_once(
                 scanned_event_count=0,
                 scanned_row_count=0,
                 rotate_event_count=0,
+                read_log_file=start_log_file or "",
+                read_log_pos=start_log_pos or 0,
+                business_log_file=business_start_log_file or start_log_file or "",
+                business_log_pos=int(business_start_log_pos or start_log_pos or 0),
+                internal_noise_only_count=0,                
                 row_event_count=0,
                 older_streak_count=0,
+                captured_dml_count=0,
+                captured_ddl_count=0,
+                hard_excluded_count=0,
+                rule_filtered_count=0,
+                column_resolution_error_count=0,                
                 stop_reason=stop_reason,
                 max_scanned_events=int(max_scanned_events or 0),
                 max_runtime_seconds=float(max_runtime_seconds or 0),
@@ -3413,6 +3537,11 @@ def capture_binlog_once(
                     "row_event_count": 0,
                     "older_streak_count": 0,
                     "stop_reason": stop_reason,
+                    "read_log_file": start_log_file or "",
+                    "read_log_pos": start_log_pos or 0,
+                    "business_log_file": business_start_log_file or start_log_file or "",
+                    "business_log_pos": int(business_start_log_pos or start_log_pos or 0),
+                    "internal_noise_only_count": 0,                    
                     "max_scanned_events": int(max_scanned_events or 0),
                     "max_runtime_seconds": float(max_runtime_seconds or 0),
                     "enable_filter_audit": bool(enable_filter_audit),
@@ -3462,6 +3591,16 @@ def capture_binlog_once(
                 rotate_event_count=0,
                 row_event_count=0,
                 older_streak_count=0,
+                captured_dml_count=0,
+                captured_ddl_count=0,
+                hard_excluded_count=0,
+                rule_filtered_count=0,
+                read_log_file=start_log_file or "",
+                read_log_pos=start_log_pos or 0,
+                business_log_file=business_start_log_file or start_log_file or "",
+                business_log_pos=int(business_start_log_pos or start_log_pos or 0),
+                internal_noise_only_count=0,                
+                column_resolution_error_count=0,                
                 stop_reason=stop_reason,
                 max_scanned_events=int(max_scanned_events or 0),
                 max_runtime_seconds=float(max_runtime_seconds or 0),
@@ -3578,16 +3717,29 @@ def capture_binlog_once(
         def finalize_current_event():
             nonlocal current_event
             nonlocal current_section
+        
             nonlocal captured_count
+            nonlocal captured_dml_count
+            nonlocal captured_ddl_count
+        
             nonlocal skipped_count
+            nonlocal hard_excluded_count
+            nonlocal rule_filtered_count
+            nonlocal column_resolution_error_count
+            nonlocal internal_noise_only_count
+        
             nonlocal scanned_event_count
             nonlocal scanned_row_count
             nonlocal row_event_count
             nonlocal stop_reason
             nonlocal first_non_older_event_seen
-            nonlocal last_consumed_log_file
-            nonlocal last_consumed_log_pos
-
+            nonlocal pending_last_log_file
+            nonlocal pending_last_log_pos
+            nonlocal last_read_safe_log_file
+            nonlocal last_read_safe_log_pos
+            nonlocal last_business_safe_log_file
+            nonlocal last_business_safe_log_pos
+            
             if not current_event:
                 return False
 
@@ -3604,15 +3756,11 @@ def capture_binlog_once(
             row_event_count += 1
             scanned_row_count += int(current_event.get("rows_count") or 0)
 
-            if _is_position_after(event_log_file, event_log_pos, last_consumed_log_file, last_consumed_log_pos):
-                last_consumed_log_file = event_log_file
-                last_consumed_log_pos = event_log_pos                
-                
-                
-                
 
             if _is_hard_excluded_table(table_name):
                 skipped_count += 1
+                hard_excluded_count += 1
+                internal_noise_only_count += 1
 
                 _debug_log(
                     debug,
@@ -3623,6 +3771,15 @@ def capture_binlog_once(
                     event_log_pos,
                     table_name,
                 )
+                
+                if _is_position_after(
+                    event_log_file,
+                    event_log_pos,
+                    last_read_safe_log_file,
+                    last_read_safe_log_pos,
+                ):
+                    last_read_safe_log_file = event_log_file
+                    last_read_safe_log_pos = int(event_log_pos or 0)                
 
                 current_event = None
                 current_section = None
@@ -3680,6 +3837,7 @@ def capture_binlog_once(
 
             if not rule_result.get("allowed"):
                 skipped_count += 1
+                rule_filtered_count += 1
                 if enable_filter_audit:
                     AuditEvent.objects.create(                        
                         event_type="binlog_capture_event_filtered",
@@ -3701,6 +3859,16 @@ def capture_binlog_once(
                             "evaluation_trace": rule_result.get("evaluation_trace") or [],
                         },
                     )
+                 
+                if _is_position_after(
+                    event_log_file,
+                    event_log_pos,
+                    last_read_safe_log_file,
+                    last_read_safe_log_pos,
+                ):
+                    last_read_safe_log_file = event_log_file
+                    last_read_safe_log_pos = int(event_log_pos or 0)   
+                 
                 current_event = None
                 current_section = None
                 return False            
@@ -3740,11 +3908,15 @@ def capture_binlog_once(
             item = _attach_capture_wagon_metadata(item)
         
             pending_outbound_events.append(
-                _build_outbound_event_instance(replication_service, item)
-            )
-            captured_count += 1
-            
+                        _build_outbound_event_instance(replication_service, item)
+                    )
         
+            pending_last_log_file = event_log_file
+            pending_last_log_pos = int(event_log_pos or 0)
+        
+            captured_count += 1
+            captured_dml_count += 1
+            
             if len(pending_outbound_events) >= int(bulk_insert_batch_size or 1):
                 _flush_pending_outbound_events()
         
@@ -3822,11 +3994,17 @@ def capture_binlog_once(
         
                     ddl_item = _attach_capture_wagon_metadata(ddl_item)
         
-                    pending_outbound_events.append(
-                                _build_outbound_event_instance(replication_service, ddl_item)
-                            )
-                    captured_count += 1
         
+                    pending_outbound_events.append(
+                                        _build_outbound_event_instance(replication_service, ddl_item)
+                                    )
+                
+                    pending_last_log_file = current_event_file
+                    pending_last_log_pos = int(current_event_pos or 0)
+                
+                    captured_count += 1
+                    captured_ddl_count += 1
+                    
                     if len(pending_outbound_events) >= int(bulk_insert_batch_size or 1):
                         _flush_pending_outbound_events()
         
@@ -3841,15 +4019,6 @@ def capture_binlog_once(
                         stop_reason = "max_scanned_events_reached"
                         should_stop = True
                         break
-        
-                    if _is_position_after(
-                                current_event_file,
-                                int(current_event_pos or 0),
-                                last_consumed_log_file,
-                                last_consumed_log_pos,
-                                ):
-                        last_consumed_log_file = current_event_file
-                        last_consumed_log_pos = int(current_event_pos or 0)
         
                 if should_stop:
                     break
@@ -3917,35 +4086,47 @@ def capture_binlog_once(
                 ) < 0
     
         if stop_reason == "completed" and window_truncated:
-            stop_reason = "scan_window_limit_reached"        
+            stop_reason = "scan_window_limit_reached"  
+            
 
-        if _is_position_after(
-            last_consumed_log_file,
-            last_consumed_log_pos,
-            checkpoint.log_file or "",
-            int(checkpoint.log_pos or 0),
-        ):
-            _update_checkpoint(
-                checkpoint=checkpoint,
-                log_file=last_consumed_log_file,
-                log_pos=last_consumed_log_pos,
-                transaction_id="",
-                checkpoint_data={
-                    "last_event_type": last_event_seen.get("event_type") if last_event_seen else "",
-                    "captured_count": captured_count,
-                    "skipped_count": skipped_count,
-                    "ignored_older_count": ignored_older_count,
-                    "scanned_event_count": scanned_event_count,
-                    "scanned_row_count": scanned_row_count,
-                    "start_log_file": start_log_file or "",
-                    "start_log_pos": start_log_pos or 0,
-                },
-            )
+
+        read_cursor_file = last_read_safe_log_file or start_log_file or ""
+        read_cursor_pos = int(last_read_safe_log_pos or start_log_pos or 0)
+
+        business_cursor_file = last_business_safe_log_file or business_start_log_file or start_log_file or ""
+        business_cursor_pos = int(last_business_safe_log_pos or business_start_log_pos or start_log_pos or 0)
+
+        _set_capture_checkpoint_positions(
+            checkpoint=checkpoint,
+            read_log_file=read_cursor_file,
+            read_log_pos=read_cursor_pos,
+            business_log_file=business_cursor_file,
+            business_log_pos=business_cursor_pos,
+            transaction_id="",
+            extra_checkpoint_data={
+                "last_event_type": last_event_seen.get("event_type") if last_event_seen else "",
+                "captured_count": captured_count,
+                "skipped_count": skipped_count,
+                "ignored_older_count": ignored_older_count,
+                "scanned_event_count": scanned_event_count,
+                "scanned_row_count": scanned_row_count,
+                "start_log_file": start_log_file or "",
+                "start_log_pos": start_log_pos or 0,
+                "read_start_log_file": read_start_log_file or "",
+                "read_start_log_pos": int(read_start_log_pos or 0),
+                "business_start_log_file": business_start_log_file or "",
+                "business_start_log_pos": int(business_start_log_pos or 0),
+            },
+        )            
+            
 
         elapsed_seconds = time.monotonic() - started_at_ts
 
-        if stop_reason == "completed" and scanned_event_count == 0:
-            stop_reason = "no_events_available"
+        if stop_reason == "completed":
+            if scanned_event_count == 0 and internal_noise_only_count > 0:
+                stop_reason = "internal_noise_only"
+            elif scanned_event_count == 0:
+                stop_reason = "no_events_available"
 
 
         _debug_log(
@@ -3990,11 +4171,21 @@ def capture_binlog_once(
                 "progress_message_count": int(progress_message_count or 0),
                 "progress_snapshots": progress_snapshots,                
                 "replication_service_id": replication_service.id,
+                
                 "captured_count": captured_count,
+                "captured_dml_count": captured_dml_count,
+                "captured_ddl_count": captured_ddl_count,
+
                 "skipped_count": skipped_count,
+                "hard_excluded_count": hard_excluded_count,
+                "rule_filtered_count": rule_filtered_count,
+                "column_resolution_error_count": column_resolution_error_count,
+                "internal_noise_only_count": internal_noise_only_count,
+
                 "ignored_older_count": ignored_older_count,
                 "scanned_event_count": scanned_event_count,
                 "scanned_row_count": scanned_row_count,
+                
                 "rotate_event_count": rotate_event_count,
                 "row_event_count": row_event_count,
                 "older_streak_count": older_streak_count,
@@ -4007,8 +4198,15 @@ def capture_binlog_once(
                 "elapsed_seconds": round(elapsed_seconds, 3),
                 "start_log_file": start_log_file or "",
                 "start_log_pos": start_log_pos or 0,
-                "log_file": last_consumed_log_file or "",
-                "log_pos": last_consumed_log_pos or 0,
+                
+                "log_file": last_business_safe_log_file or "",
+                "log_pos": last_business_safe_log_pos or 0,
+                "read_log_file": last_read_safe_log_file or "",
+                "read_log_pos": last_read_safe_log_pos or 0,
+                "business_log_file": last_business_safe_log_file or "",
+                "business_log_pos": last_business_safe_log_pos or 0,
+                
+                
                 "current_master_before_file": current_master_before_file or "",
                 "current_master_before_pos": int(current_master_before_pos or 0),
                 "current_master_after_file": current_master_after_file or "",
@@ -4036,13 +4234,28 @@ def capture_binlog_once(
         logger.warning("======================================================================")
         logger.warning(" service_id           : %s", replication_service.id)
         logger.warning(" stop_reason          : %s", stop_reason)
+        
+        
         logger.warning(" captured_count       : %s", captured_count)
+        logger.warning(" captured_dml_count   : %s", captured_dml_count)
+        logger.warning(" captured_ddl_count   : %s", captured_ddl_count)
+
         logger.warning(" skipped_count        : %s", skipped_count)
+        logger.warning(" hard_excluded_count  : %s", hard_excluded_count)
+        logger.warning(" rule_filtered_count  : %s", rule_filtered_count)
+        logger.warning(" column_errors_count  : %s", column_resolution_error_count)
+
         logger.warning(" ignored_older_count  : %s", ignored_older_count)
         logger.warning(" eligible_events_seen : %s", scanned_event_count)
-        logger.warning(" raw_rows_seen        : %s", scanned_row_count)
+        logger.warning(" raw_rows_seen        : %s", scanned_row_count)        
+        
         logger.warning(" elapsed_seconds      : %s", round(elapsed_seconds, 3))
-        logger.warning(" final_checkpoint     : %s:%s", last_consumed_log_file or "", last_consumed_log_pos or 0)
+        
+        logger.warning(" stop_reason          : %s", stop_reason)
+        logger.warning(" internal_noise_count : %s", internal_noise_only_count)
+        logger.warning(" read_cursor_final    : %s:%s", last_read_safe_log_file or "", last_read_safe_log_pos or 0)
+        logger.warning(" business_checkpoint  : %s:%s", last_business_safe_log_file or "", last_business_safe_log_pos or 0)
+        
         logger.warning(" master_after         : %s:%s", current_master_after_file or "", current_master_after_pos or 0)
         logger.warning(" wagons               : %s", wagon_seq)
         logger.warning("======================================================================")
@@ -4051,16 +4264,19 @@ def capture_binlog_once(
         
         capture_ok = False
 
+
         if captured_count > 0:
             capture_ok = True
         elif stop_reason in (
             "completed",
             "no_events_available",
+            "internal_noise_only",
             "capture_limit_reached",
             "max_scanned_events_reached",
             "scan_window_limit_reached",
-            ):
+        ):
             capture_ok = True
+            
 
         final_status = "success" if capture_ok else "warning"
         final_return_code = "CAPTURE_COMPLETED"
@@ -4073,6 +4289,8 @@ def capture_binlog_once(
             final_return_code = "CAPTURE_SCAN_WINDOW_REACHED"
         elif stop_reason == "no_events_available":
             final_return_code = "CAPTURE_NO_EVENTS"
+        elif stop_reason == "internal_noise_only":
+            final_return_code = "CAPTURE_INTERNAL_NOISE_ONLY"
 
         return _build_capture_result(
             ok=capture_ok,
@@ -4080,11 +4298,20 @@ def capture_binlog_once(
             return_code=final_return_code,
             error_code="",
             error_message="",
+            
             captured_count=captured_count,
+            captured_dml_count=captured_dml_count,
+            captured_ddl_count=captured_ddl_count,
+        
             skipped_count=skipped_count,
+            hard_excluded_count=hard_excluded_count,
+            rule_filtered_count=rule_filtered_count,
+            column_resolution_error_count=column_resolution_error_count,
+            internal_noise_only_count=internal_noise_only_count,
+        
             ignored_older_count=ignored_older_count,
             scanned_event_count=scanned_event_count,
-            scanned_row_count=scanned_row_count,
+            scanned_row_count=scanned_row_count,            
             rotate_event_count=rotate_event_count,
             row_event_count=row_event_count,
             older_streak_count=older_streak_count,
@@ -4098,8 +4325,13 @@ def capture_binlog_once(
             replication_service_id=replication_service.id,
             start_log_file=start_log_file or "",
             start_log_pos=start_log_pos or 0,
-            log_file=last_consumed_log_file or "",
-            log_pos=last_consumed_log_pos or 0,
+            
+            log_file=last_business_safe_log_file or "",
+            log_pos=last_business_safe_log_pos or 0,
+            read_log_file=last_read_safe_log_file or "",
+            read_log_pos=last_read_safe_log_pos or 0,
+            business_log_file=last_business_safe_log_file or "",
+            business_log_pos=last_business_safe_log_pos or 0,            
             current_master_before_file=current_master_before_file or "",
             current_master_before_pos=int(current_master_before_pos or 0),
             current_master_after_file=current_master_after_file or "",
@@ -4168,11 +4400,20 @@ def capture_binlog_once(
             return_code="CAPTURE_TIMEOUT",
             error_code="CAPTURE_TIMEOUT",
             error_message=str(exc),
+            
             captured_count=captured_count,
             skipped_count=skipped_count,
             ignored_older_count=ignored_older_count,
             scanned_event_count=scanned_event_count,
             scanned_row_count=scanned_row_count,
+            
+            captured_dml_count=0,
+            captured_ddl_count=0,
+            hard_excluded_count=0,
+            rule_filtered_count=0,
+            column_resolution_error_count=0,            
+            
+            
             rotate_event_count=rotate_event_count,
             row_event_count=row_event_count,
             older_streak_count=older_streak_count,
@@ -4181,8 +4422,14 @@ def capture_binlog_once(
             replication_service_id=replication_service.id,
             start_log_file=start_log_file or "",
             start_log_pos=start_log_pos or 0,
-            log_file=last_consumed_log_file or "",
-            log_pos=last_consumed_log_pos or 0,
+            
+            log_file=last_business_safe_log_file or "",
+            log_pos=last_business_safe_log_pos or 0,
+            read_log_file=last_read_safe_log_file or "",
+            read_log_pos=last_read_safe_log_pos or 0,
+            business_log_file=last_business_safe_log_file or "",
+            business_log_pos=last_business_safe_log_pos or 0,           
+            
             current_master_before_file=current_master_before_file or "",
             current_master_before_pos=int(current_master_before_pos or 0),
             current_master_after_file=current_master_after_file or "",
@@ -4234,8 +4481,13 @@ def capture_binlog_once(
                 "elapsed_seconds": round(elapsed_seconds, 3),
                 "start_log_file": start_log_file or "",
                 "start_log_pos": start_log_pos or 0,
-                "log_file": last_consumed_log_file or "",
-                "log_pos": last_consumed_log_pos or 0,
+                
+                "log_file": last_business_safe_log_file or "",
+                "log_pos": last_business_safe_log_pos or 0,
+                "read_log_file": last_read_safe_log_file or "",
+                "read_log_pos": last_read_safe_log_pos or 0,
+                "business_log_file": last_business_safe_log_file or "",
+                "business_log_pos": last_business_safe_log_pos or 0,                
                 "current_master_before_file": current_master_before_file or "",
                 "current_master_before_pos": int(current_master_before_pos or 0),
                 "current_master_after_file": current_master_after_file or "",
@@ -4264,12 +4516,23 @@ def capture_binlog_once(
             row_event_count=row_event_count,
             older_streak_count=older_streak_count,
             stop_reason=stop_reason,
+            captured_dml_count=0,
+            captured_ddl_count=0,
+            hard_excluded_count=0,
+            rule_filtered_count=0,
+            column_resolution_error_count=0,            
             elapsed_seconds=round(elapsed_seconds, 3),
             replication_service_id=replication_service.id,
             start_log_file=start_log_file or "",
             start_log_pos=start_log_pos or 0,
-            log_file=last_consumed_log_file or "",
-            log_pos=last_consumed_log_pos or 0,
+            
+            log_file=last_business_safe_log_file or "",
+            log_pos=last_business_safe_log_pos or 0,
+            read_log_file=last_read_safe_log_file or "",
+            read_log_pos=last_read_safe_log_pos or 0,
+            business_log_file=last_business_safe_log_file or "",
+            business_log_pos=last_business_safe_log_pos or 0,
+            
             current_master_before_file=current_master_before_file or "",
             current_master_before_pos=int(current_master_before_pos or 0),
             current_master_after_file=current_master_after_file or "",
@@ -4543,10 +4806,12 @@ def capture_binlog_once_new(
                     _save_outbound_event(replication_service, resolved_item)
                     captured_count += 1
                     
+                    
                 except ColumnResolutionError as exc:
                     skipped_count += 1
-                    AuditEvent.objects.create(
-                        event_type="binlog_capture_column_resolution_error",
+                    column_resolution_error_count += 1
+                
+                    AuditEvent.objects.create(                        event_type="binlog_capture_column_resolution_error",
                         level="error",
                         node=replication_service.source_node,
                         message=f"Column resolution failed for service '{replication_service.name}'",
@@ -4607,11 +4872,21 @@ def capture_binlog_once_new(
             created_by=initiated_by,
             payload={
                 "replication_service_id": replication_service.id,
+                
                 "captured_count": captured_count,
+                "captured_dml_count": captured_dml_count,
+                "captured_ddl_count": captured_ddl_count,
+
                 "skipped_count": skipped_count,
-                "ignored_older_count": 0,
+                "hard_excluded_count": hard_excluded_count,
+                "rule_filtered_count": rule_filtered_count,
+                "column_resolution_error_count": column_resolution_error_count,
+                "internal_noise_only_count": internal_noise_only_count,
+
+                "ignored_older_count": ignored_older_count,
                 "scanned_event_count": scanned_event_count,
                 "scanned_row_count": scanned_row_count,
+                
                 "rotate_event_count": rotate_event_count,
                 "row_event_count": row_event_count,
                 "older_streak_count": 0,
@@ -4783,10 +5058,85 @@ def _fetch_current_master_status(replication_service):
     finally:
         conn.close()
 
+def _extract_checkpoint_cursor(checkpoint, key, fallback_file="", fallback_pos=0):
+    checkpoint_data = checkpoint.checkpoint_data or {}
+    if not isinstance(checkpoint_data, dict):
+        checkpoint_data = {}
+
+    cursor = checkpoint_data.get(key) or {}
+    if not isinstance(cursor, dict):
+        cursor = {}
+
+    log_file = str(cursor.get("log_file") or fallback_file or "").strip()
+    log_pos = int(cursor.get("log_pos") or fallback_pos or 0)
+
+    return log_file, log_pos
+
+
+def _get_business_checkpoint_position(checkpoint):
+    return (
+        str(checkpoint.log_file or "").strip(),
+        int(checkpoint.log_pos or 0),
+    )
+
+
+def _get_read_checkpoint_position(checkpoint):
+    business_file, business_pos = _get_business_checkpoint_position(checkpoint)
+    return _extract_checkpoint_cursor(
+        checkpoint=checkpoint,
+        key="read_cursor",
+        fallback_file=business_file,
+        fallback_pos=business_pos,
+    )
+
+
+def _set_capture_checkpoint_positions(
+    checkpoint,
+    read_log_file="",
+    read_log_pos=0,
+    business_log_file="",
+    business_log_pos=0,
+    transaction_id="",
+    extra_checkpoint_data=None,
+):
+    checkpoint_data = checkpoint.checkpoint_data or {}
+    if not isinstance(checkpoint_data, dict):
+        checkpoint_data = {}
+
+    checkpoint_data["read_cursor"] = {
+        "log_file": str(read_log_file or "").strip(),
+        "log_pos": int(read_log_pos or 0),
+        "updated_at": timezone.now().isoformat(),
+    }
+
+    checkpoint_data["business_cursor"] = {
+        "log_file": str(business_log_file or "").strip(),
+        "log_pos": int(business_log_pos or 0),
+        "updated_at": timezone.now().isoformat(),
+    }
+
+    if extra_checkpoint_data and isinstance(extra_checkpoint_data, dict):
+        checkpoint_data.update(extra_checkpoint_data)
+
+    checkpoint.log_file = str(business_log_file or "").strip()
+    checkpoint.log_pos = int(business_log_pos or 0)
+    checkpoint.transaction_id = transaction_id or ""
+    checkpoint.checkpoint_data = checkpoint_data
+
+    checkpoint.save(
+        update_fields=[
+            "log_file",
+            "log_pos",
+            "transaction_id",
+            "checkpoint_data",
+            "updated_at",
+        ]
+    )
+
 
 def _get_or_create_capture_checkpoint(replication_service):
     engine = replication_service.service_type
-    checkpoint, _ = ReplicationCheckpoint.objects.get_or_create(
+    checkpoint, created = ReplicationCheckpoint.objects.get_or_create(
         replication_service=replication_service,
         node=replication_service.source_node,
         direction="capture",
@@ -4795,9 +5145,43 @@ def _get_or_create_capture_checkpoint(replication_service):
             "log_file": "",
             "log_pos": 4,
             "transaction_id": "",
-            "checkpoint_data": {},
+            "checkpoint_data": {
+                "read_cursor": {
+                    "log_file": "",
+                    "log_pos": 4,
+                },
+                "business_cursor": {
+                    "log_file": "",
+                    "log_pos": 4,
+                },
+            },
         },
     )
+
+    checkpoint_data = checkpoint.checkpoint_data or {}
+    if not isinstance(checkpoint_data, dict):
+        checkpoint_data = {}
+
+    changed = False
+
+    if "read_cursor" not in checkpoint_data:
+        checkpoint_data["read_cursor"] = {
+            "log_file": checkpoint.log_file or "",
+            "log_pos": int(checkpoint.log_pos or 4),
+        }
+        changed = True
+
+    if "business_cursor" not in checkpoint_data:
+        checkpoint_data["business_cursor"] = {
+            "log_file": checkpoint.log_file or "",
+            "log_pos": int(checkpoint.log_pos or 4),
+        }
+        changed = True
+
+    if changed:
+        checkpoint.checkpoint_data = checkpoint_data
+        checkpoint.save(update_fields=["checkpoint_data", "updated_at"])
+
     return checkpoint
 
 
