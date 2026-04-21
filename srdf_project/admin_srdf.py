@@ -2,40 +2,44 @@
 # -*- coding: utf-8 -*-
 
 
-from django.contrib import admin
 import json
-from django.utils.html import format_html
-from django.utils import timezone
+
+
+
+#==========================================================
+#===== DJANGO LIBRARIES REQUIRED FOR EXTEND ADMIN TOOL  ===
+#==========================================================
+from django                   import forms
+from django.contrib           import admin
+from django.utils             import timezone
+from django.http              import JsonResponse, HttpResponseRedirect
+from django.template.response import TemplateResponse
+from django.urls              import path, reverse
+from django.utils.html        import format_html
+from django.contrib           import messages
+
+
+#==================================================
+#===== SPECIFIC SRDF SERVICES                  ====
+#==================================================
+from srdf.services.admin_db_catalog        import AdminDBCatalogError, list_source_databases,list_source_tables, resolve_replication_service_from_plan_id,    search_values
+from srdf.services.archive_engine          import run_archive_once, _ensure_archive_tables_ready
+from srdf.services.bootstrap_plan_runner   import run_bootstrap_plan_once
+from srdf.services.transport_batch_builder import build_transport_batch_once
+from srdf.services.transport_sender        import resume_failed_batch_once, send_transport_batch_once
+
 from srdf.models import *
 
-
-from ideolab_admin_tools.admin_audit import AuditedAdminMixin
-
-
-from django import forms
-
-
-from django.http import JsonResponse, HttpResponseRedirect
-from django.template.response import TemplateResponse
+#=====================================
+#=====================================
+#=== EXTENDED IDEOLAB ADMIN TOOLS  ===
+#=====================================
+#=====================================
+from ideolab_admin_tools.admin_audit  import AuditedAdminMixin
+from ideolab_admin_tools.admin_impact import SafeDeletePreviewAdminMixin
 
 
-from django.urls import path, reverse
-from django.utils.html import format_html
-from django.contrib import messages
 
-
-from srdf.services.admin_db_catalog import (
-    AdminDBCatalogError,
-    list_source_databases,
-    list_source_tables,
-    resolve_replication_service_from_plan_id,
-    search_values,
-)
-
-from srdf.services.archive_engine import run_archive_once, _ensure_archive_tables_ready
-from srdf.services.bootstrap_plan_runner import run_bootstrap_plan_once
-from srdf.services.transport_batch_builder import build_transport_batch_once
-from srdf.services.transport_sender import resume_failed_batch_once, send_transport_batch_once
 
 # =========================
 # UTILS
@@ -464,7 +468,7 @@ class ExecutionLockAdmin(admin.ModelAdmin):
         return True    
     
     
-class OutboundChangeEventAdmin(admin.ModelAdmin):
+class OutboundChangeEventAdmin(SafeDeletePreviewAdminMixin, admin.ModelAdmin):
     
     list_display = (
         "id",

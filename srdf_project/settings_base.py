@@ -107,16 +107,16 @@ ASGI_APPLICATION = "srdf_project.asgi.application"
 
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.mysql",
-        "NAME": os.environ.get("SRDF_CONTROL_DB_NAME", "srdf_control"),
-        "USER": os.environ.get("SRDF_CONTROL_DB_USER", "root"),
-        "PASSWORD": os.environ.get("SRDF_CONTROL_DB_PASSWORD", ""),
-        "HOST": os.environ.get("SRDF_CONTROL_DB_HOST", "127.0.0.1"),
-        "PORT": os.environ.get("SRDF_CONTROL_DB_PORT", "3306"),
+        "ENGINE"    : "django.db.backends.mysql",
+        "NAME"      : os.environ.get("SRDF_CONTROL_DB_NAME", "srdf_control"),
+        "USER"      : os.environ.get("SRDF_CONTROL_DB_USER", "root"),
+        "PASSWORD"  : os.environ.get("SRDF_CONTROL_DB_PASSWORD", ""),
+        "HOST"      : os.environ.get("SRDF_CONTROL_DB_HOST", "127.0.0.1"),
+        "PORT"      : os.environ.get("SRDF_CONTROL_DB_PORT", "3306"),
         "CONN_MAX_AGE": 300,
         "OPTIONS": {
-            "charset": "utf8mb4",
-            "use_unicode": True,
+            "charset"     : "utf8mb4",
+            "use_unicode" : True,
             "init_command": (
                 "SET foreign_key_checks = 0; "
                 "SET sql_mode='STRICT_TRANS_TABLES'; "

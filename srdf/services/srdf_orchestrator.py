@@ -21,26 +21,26 @@ from srdf.models import (
     SRDFServicePhaseExecution,
     SRDFServiceRuntimeState,
 )
-
-from srdf.services.archive_engine import run_archive_once
-from srdf.services.bootstrap_plan_runner import run_bootstrap_plan_once
-from srdf.services.capture_engine import capture_changes
-from srdf.services.dedup_engine import run_deduplicate_once
-from srdf.services.transport_applier import apply_inbound_events_once
-from srdf.services.node_api_client import run_remote_action
-
 from srdf.models import InboundChangeEvent, TransportBatch
-
-
-from srdf.services.transport_batch_builder import build_transport_batch_once
-from srdf.services.transport_sender import send_transport_batch_once, resume_failed_batch_once
 from srdf.models import TransportBatch, OutboundChangeEvent
 
+from srdf.services.archive_engine          import run_archive_once
+from srdf.services.bootstrap_plan_runner   import run_bootstrap_plan_once
+from srdf.services.capture_engine          import capture_changes
+from srdf.services.dedup_engine            import run_deduplicate_once
+from srdf.services.transport_applier       import apply_inbound_events_once
+from srdf.services.node_api_client         import run_remote_action
+from srdf.services.transport_batch_builder import build_transport_batch_once
+from srdf.services.transport_sender        import send_transport_batch_once, resume_failed_batch_once
+from srdf.services.transport_payload_codec import (
+    build_logical_payload,
+    encode_transport_payload,
+)
 
-RETURN_OK = "ok"
-RETURN_EMPTY = "empty"
-RETURN_RETRY = "retry"
-RETURN_FAILED = "failed"
+RETURN_OK      = "ok"
+RETURN_EMPTY   = "empty"
+RETURN_RETRY   = "retry"
+RETURN_FAILED  = "failed"
 RETURN_STOPPED = "stopped"
 RETURN_SKIPPED = "skipped"
 
