@@ -2677,6 +2677,7 @@ def capture_binlog_once(
     wagon_seq = 0
 
     resolved_settings_payload = {}
+    
 
     try:
         replication_service = _get_replication_service(replication_service_id)
