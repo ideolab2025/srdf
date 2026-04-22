@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 
 from django.urls import path
-from srdf.views import doctor_modal_view
 
 from . import views
 
@@ -18,8 +17,4 @@ urlpatterns = [
     path("api/ping/", views.api_ping, name="api_ping"),
     path("api/status/", views.api_status, name="api_status"),
     path("api/action/", views.api_action, name="api_action"),
-    
-    #=========================================
-    #==== MIGRATION DOCTOR                 ===
-    path("doctor/modal/", doctor_modal_view, name="srdf_doctor_modal"),
 ]

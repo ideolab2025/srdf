@@ -37,6 +37,8 @@ if settings.ADMIN_EXTENDED:
         url(r'admin_tools/', include('admin_tools.urls')),
         url(r'^%s/' % adminUrl           , admin.site.urls),
         url(r'^%s/' % adminUrlParameters , parameters_admin_site.urls),
+        path("ideolab-admin-tools/", include(("ideolab_admin_tools.urls", "ideolab_admin_tools"), namespace="ideolab_admin_tools")),
+        
     ]
 else:
     urlpatterns += [

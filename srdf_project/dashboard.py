@@ -1643,7 +1643,7 @@ class CountedAppList(modules.AppList):
             model._meta.model_name,
         )
 
-        endpoint = reverse("srdf:srdf_doctor_modal")
+        endpoint = reverse("srdf_doctor_modal")
 
         return format_html(
             '<span class="srdf-doctor-wrap" style="display:inline-block;margin-right:4px;">'

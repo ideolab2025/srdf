@@ -18,10 +18,23 @@ from pymysqlreplication import BinLogStreamReader
 from pymysqlreplication.event import RotateEvent
 from pymysqlreplication.row_event import DeleteRowsEvent, UpdateRowsEvent, WriteRowsEvent
 from srdf.services.sql_scope_rules import explain_rule_match, is_allowed
+
+
+
 from srdf.services.settings_resolver import (
     get_srdf_setting_bool,
     get_srdf_setting_int,
 )
+
+#===============================================
+#==== EXTERNALIZE DEDICATED MARIADB SERVICES ===
+#===============================================
+from srdf.services.mariadb.capture_drain import (
+    normalize_retry_limit,
+    should_retry_after_internal_noise,
+)
+
+
 
 from srdf.models import (
     AuditEvent,
@@ -2614,7 +2627,11 @@ def capture_binlog_once(
     progress_enabled=None,
     progress_every_events=None,
     progress_every_seconds=None,
+    auto_drain_internal_noise=None,
+    internal_noise_retry_limit=None,
+    _drain_attempt=0,
     ):
+    
 
     metadata_conn = None
     column_cache = {}
@@ -2675,6 +2692,9 @@ def capture_binlog_once(
     progress_message_count = 0
     progress_snapshots = []
     wagon_seq = 0
+
+    auto_drain_internal_noise_resolved = False
+    internal_noise_retry_limit_resolved = 0
 
     resolved_settings_payload = {}
     
@@ -2860,6 +2880,33 @@ def capture_binlog_once(
         progress_enabled = bool(progress_enabled)
         
         
+    if auto_drain_internal_noise is None:
+        auto_drain_internal_noise = get_srdf_setting_bool(
+            key="capture.auto_drain_internal_noise",
+            replication_service=replication_service,
+            engine=resolved_engine,
+            fallback=True,
+        )
+    else:
+        auto_drain_internal_noise = bool(auto_drain_internal_noise)
+
+    if internal_noise_retry_limit is None:
+        internal_noise_retry_limit = get_srdf_setting_int(
+            key="capture.internal_noise_retry_limit",
+            replication_service=replication_service,
+            engine=resolved_engine,
+            fallback=2,
+            minimum=0,
+        )
+
+    internal_noise_retry_limit_resolved = normalize_retry_limit(
+        internal_noise_retry_limit,
+        fallback=2,
+        minimum=0,
+        maximum=5,
+    )
+    auto_drain_internal_noise_resolved = bool(auto_drain_internal_noise)
+        
         
     resolved_settings_payload = {
         "limit": int(limit or 0),
@@ -2891,12 +2938,17 @@ def capture_binlog_once(
             if requested_scan_window_max_bytes is not None
             else None
         ),
+        
         "adaptive_max_scanned_events_used": False,
         "adaptive_scan_window_max_files_used": False,
         "adaptive_scan_window_max_bytes_used": False,
         "estimated_backlog_bytes": 0,
         "estimated_backlog_file_count": 0,
-    }    
+        "auto_drain_internal_noise": bool(auto_drain_internal_noise_resolved),
+        "internal_noise_retry_limit": int(internal_noise_retry_limit_resolved or 0),
+        "drain_attempt": int(_drain_attempt or 0),
+    }
+       
     
 
 
@@ -3349,9 +3401,14 @@ def capture_binlog_once(
         logger.warning(" wagon_max_events            : %s", resolved_settings_payload["wagon_max_events"])
         logger.warning(" progress_enabled            : %s", resolved_settings_payload["progress_enabled"])
         logger.warning(" progress_every_events       : %s", resolved_settings_payload["progress_every_events"])
+        
         logger.warning(" progress_every_seconds      : %s", resolved_settings_payload["progress_every_seconds"])
+        logger.warning(" auto_drain_internal_noise   : %s", resolved_settings_payload["auto_drain_internal_noise"])
+        logger.warning(" internal_noise_retry_limit  : %s", resolved_settings_payload["internal_noise_retry_limit"])
+        logger.warning(" drain_attempt               : %s", resolved_settings_payload["drain_attempt"])
         logger.warning(" enable_filter_audit         : %s", resolved_settings_payload["enable_filter_audit"])
-        logger.warning(" disable_time_limit          : %s", resolved_settings_payload["disable_time_limit"])
+        logger.warning(" disable_time_limit          : %s", resolved_settings_payload["disable_time_limit"])       
+        
         logger.warning(" debug                       : %s", resolved_settings_payload["debug"])
         logger.warning(" verify_with_mysqlbinlog     : %s", resolved_settings_payload["verify_with_mysqlbinlog"])
         logger.warning(" note                        : eligible_events exclude hard-filtered / rule-filtered rows")
@@ -4224,8 +4281,9 @@ def capture_binlog_once(
                 "scan_window_max_bytes": int(scan_window_max_bytes or 0),
                 "window_end_file": window_end_file or "",
                 "window_end_pos": int(window_end_pos or 0),  
-                "resolved_settings": resolved_settings_payload,
-            },
+                
+                "drain_attempt": int(_drain_attempt or 0),
+                "resolved_settings": resolved_settings_payload,            },
         )
         
         
@@ -4253,8 +4311,11 @@ def capture_binlog_once(
         logger.warning(" elapsed_seconds      : %s", round(elapsed_seconds, 3))
         
         logger.warning(" stop_reason          : %s", stop_reason)
+        
         logger.warning(" internal_noise_count : %s", internal_noise_only_count)
-        logger.warning(" read_cursor_final    : %s:%s", last_read_safe_log_file or "", last_read_safe_log_pos or 0)
+        logger.warning(" drain_attempt        : %s", int(_drain_attempt or 0))
+        logger.warning(" read_cursor_final    : %s:%s", last_read_safe_log_file or "", last_read_safe_log_pos or 0)        
+        
         logger.warning(" business_checkpoint  : %s:%s", last_business_safe_log_file or "", last_business_safe_log_pos or 0)
         
         logger.warning(" master_after         : %s:%s", current_master_after_file or "", current_master_after_pos or 0)
@@ -4293,7 +4354,7 @@ def capture_binlog_once(
         elif stop_reason == "internal_noise_only":
             final_return_code = "CAPTURE_INTERNAL_NOISE_ONLY"
 
-        return _build_capture_result(
+        final_result = _build_capture_result(
             ok=capture_ok,
             status=final_status,
             return_code=final_return_code,
@@ -4353,9 +4414,61 @@ def capture_binlog_once(
             progress_every_events=int(progress_every_events or 0),
             progress_every_seconds=float(progress_every_seconds or 0),
             progress_message_count=int(progress_message_count or 0),
+            
             progress_snapshots=progress_snapshots,
-            resolved_settings=resolved_settings_payload,
+            drain_attempt=int(_drain_attempt or 0),
+            resolved_settings=resolved_settings_payload,     
         )    
+        
+        
+        #=====================================================
+        #==== 3.2 — Ajouter le bloc auto-drain juste après ===
+        #=====================================================
+
+        if auto_drain_internal_noise_resolved and should_retry_after_internal_noise(
+            result=final_result,
+            attempt=_drain_attempt,
+            retry_limit=internal_noise_retry_limit_resolved,
+            ):
+            _debug_log(
+                debug,
+                "warning",
+                "[SRDF_CAPTURE][AUTO_DRAIN_RETRY] service_id=%s attempt=%s/%s read_cursor=%s:%s business_checkpoint=%s:%s",
+                replication_service.id,
+                int(_drain_attempt or 0) + 1,
+                internal_noise_retry_limit_resolved,
+                final_result.get("read_log_file") or "",
+                int(final_result.get("read_log_pos") or 0),
+                final_result.get("business_log_file") or "",
+                int(final_result.get("business_log_pos") or 0),
+            )
+
+            return capture_binlog_once(
+                replication_service_id=replication_service_id,
+                limit=limit,
+                initiated_by=initiated_by,
+                initialize_only=False,
+                force_current_pos=False,
+                max_scanned_events=requested_max_scanned_events,
+                max_runtime_seconds=max_runtime_seconds,
+                enable_filter_audit=enable_filter_audit,
+                disable_time_limit=disable_time_limit,
+                debug=debug,
+                verify_with_mysqlbinlog=verify_with_mysqlbinlog,
+                scan_window_max_files=requested_scan_window_max_files,
+                scan_window_max_bytes=requested_scan_window_max_bytes,
+                bulk_insert_batch_size=bulk_insert_batch_size,
+                wagon_max_events=wagon_max_events,
+                progress_enabled=progress_enabled,
+                progress_every_events=progress_every_events,
+                progress_every_seconds=progress_every_seconds,
+                auto_drain_internal_noise=auto_drain_internal_noise_resolved,
+                internal_noise_retry_limit=internal_noise_retry_limit_resolved,
+                _drain_attempt=int(_drain_attempt or 0) + 1,
+            )
+
+        return final_result        
+
     
     
 
