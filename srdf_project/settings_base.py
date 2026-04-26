@@ -44,7 +44,7 @@ INSTALLED_APPS = [
     'admin_tools.theming'                ,
     'admin_tools.menu'                   ,
     'admin_tools.dashboard'              ,
-    "ideolab_admin_tools"                ,
+    "ideolab_admin_tools.apps.IdeolabAdminToolsConfig",
     
     "django.contrib.admin"               ,
     "django.contrib.auth"                ,
