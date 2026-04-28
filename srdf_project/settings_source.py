@@ -1,5 +1,23 @@
 from .settings_base import *
 
+
+#==================================
+#==== LICENSE CENTER            ===
+#==================================
+IDEOLAB_LICENSE_API_URL = "http://127.0.0.1:8000"
+IDEOLAB_LICENSE_KEY = "TEST-KEY"
+
+IDEOLAB_PRODUCT_CODE = "ideolab_admin_tools"
+IDEOLAB_PRODUCT_VERSION = "1.0.0"
+
+IDEOLAB_LICENSE_TIMEOUT = 5
+IDEOLAB_LICENSE_CACHE_PATH = BASE_DIR / "ideolab_license_cache.json"
+IDEOLAB_LICENSE_DOMAIN = "localhost"
+IDEOLAB_LICENSE_HOSTNAME = "devbox"
+
+#===== END LICENSE KEY               ===
+#=======================================
+
 ADMIN_EXTENDED = True
 ROOT_URLCONF = "srdf_project.urls_source"
 

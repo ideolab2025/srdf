@@ -1,0 +1,28 @@
+{
+  "checked_at": "2026-04-27T20:49:52.517000+00:00",
+  "result": {
+    "success": true,
+    "status": "VALID",
+    "reason": "License is valid",
+    "company": "IDEO-Lab Test Client",
+    "product": "ideolab_admin_tools",
+    "edition": "pro",
+    "license_id": 1,
+    "activation_uid": "10bf7530e42f40f68dcdc99c2632c9a8",
+    "expires_at": "2027-04-26T21:11:36.703000+00:00",
+    "grace_until": "2027-05-11T21:11:36.703000+00:00",
+    "allow_offline_days": 7,
+    "features": {
+      "dashboard": {
+        "enabled": true,
+        "limits": {}
+      },
+      "doctor": {
+        "enabled": true,
+        "limits": {}
+      }
+    },
+    "server_time": "2026-04-27T20:49:52.497000+00:00",
+    "license_token": "{\"activation_uid\":\"10bf7530e42f40f68dcdc99c2632c9a8\",\"allow_offline_days\":7,\"edition\":\"pro\",\"expires_at\":\"2027-04-26T21:11:36.703000+00:00\",\"features\":{\"dashboard\":{\"enabled\":true,\"limits\":{}},\"doctor\":{\"enabled\":true,\"limits\":{}}},\"grace_until\":\"2027-05-11T21:11:36.703000+00:00\",\"license_id\":1,\"product\":\"ideolab_admin_tools\",\"server_time\":\"2026-04-27T20:49:52.497000+00:00\",\"status\":\"VALID\"}:1wHSts:VdcBiIdlx3Q99E78m0fJK-xh-aNo9NBfTxRQkboXKmA"
+  }
+}

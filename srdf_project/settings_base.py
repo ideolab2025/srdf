@@ -66,6 +66,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
+    "ideolab_license_client.middleware.IdeolabLicenseAdminMiddleware",  #===  license center ===
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
@@ -201,5 +202,39 @@ ADMIN_TOOLS_MENU                   =  {
     'srdf_project.admin_parameters.parameters_admin_site'      : 'srdf_project.menu_parameters.CustomMenu',
 }
 ADMIN_TOOLS_THEMING_CSS            =    'css/pages/admin.min.css'
+
+
+#============================================
+#===== SETTINGS ADDON AND SERVICES        ===
+#============================================
+
+IDEOLAB_LICENSE_API_URL = "http://127.0.0.1:8000"
+IDEOLAB_LICENSE_KEY = "TEST-KEY"
+IDEOLAB_PRODUCT_CODE = "ideolab_admin_tools"
+IDEOLAB_PRODUCT_VERSION = "1.0.0"
+
+IDEOLAB_LICENSE_ADMIN_PREFIX = "/admin-api/"
+IDEOLAB_LICENSE_DEBUG = True
+IDEOLAB_LICENSE_BLOCK_ADMIN = True
+
+IDEOLAB_LICENSE_DEBUG = True
+IDEOLAB_LICENSE_VERBOSE = True
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+        },
+    },
+    "loggers": {
+        "ideolab_license": {
+            "handlers": ["console"],
+            "level": "DEBUG",
+            "propagate": False,
+        },
+    },
+}
 
 
